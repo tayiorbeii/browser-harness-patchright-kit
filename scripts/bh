@@ -1,0 +1,493 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+cmd="${1:-run}"
+if [[ $# -gt 0 ]]; then
+  shift || true
+fi
+
+project_root="${BH_PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+config_file="$project_root/.browser-harness.env"
+
+docs_failure="docs/06-testing-and-acceptance.md#failure-modes-and-fixes"
+docs_cdp="docs/06-testing-and-acceptance.md#cdp-endpoint-not-ready"
+
+if [[ ! -f "$config_file" ]]; then
+  echo "Missing $config_file" >&2
+  echo "Copy .browser-harness.env.example to .browser-harness.env and edit project-specific values." >&2
+  exit 2
+fi
+
+set -a
+# shellcheck disable=SC1090
+source "$config_file"
+set +a
+
+: "${BH_PROJECT_SLUG:?BH_PROJECT_SLUG is required}"
+: "${BH_CONTAINER_NAME:?BH_CONTAINER_NAME is required}"
+: "${BH_IMAGE:?BH_IMAGE is required}"
+: "${BH_DOCKER_PLATFORM:=}"
+: "${BH_HOST_PORT:?BH_HOST_PORT is required}"
+: "${BH_BU_NAME:?BH_BU_NAME is required}"
+: "${BH_PROFILE_VOLUME:?BH_PROFILE_VOLUME is required}"
+
+if [[ ! "$BH_BU_NAME" =~ ^[A-Za-z0-9_-]{1,64}$ ]]; then
+  echo "Invalid BH_BU_NAME: $BH_BU_NAME. Use only A-Z, a-z, 0-9, underscore, hyphen." >&2
+  exit 2
+fi
+
+if [[ ! "$BH_HOST_PORT" =~ ^[0-9]+$ || "$BH_HOST_PORT" -lt 1 || "$BH_HOST_PORT" -gt 65535 ]]; then
+  echo "Invalid BH_HOST_PORT: $BH_HOST_PORT. Use an unused localhost TCP port." >&2
+  exit 2
+fi
+
+state_dir="$project_root/.browser-harness"
+home_dir="$state_dir/home"
+project_hash="$(python3 -c 'import hashlib,sys; print(hashlib.sha1(sys.argv[1].encode()).hexdigest()[:12])' "$project_root")"
+# browser-harness uses Unix-domain sockets; long checkout paths can exceed the
+# socket path limit. Keep runtime/tmp short while profile/download state remains
+# project-scoped.
+runtime_dir="${BH_RUNTIME_DIR:-${TMPDIR:-/tmp}/bh-${project_hash}/runtime}"
+tmp_dir="${BH_TMP_DIR:-${TMPDIR:-/tmp}/bh-${project_hash}/tmp}"
+downloads_dir="$project_root/${BH_DOWNLOADS_DIR:-.browser-harness/downloads}"
+image_context="$project_root/docker/browser-harness-patchright"
+config_sig="${BH_IMAGE}|${BH_DOCKER_PLATFORM}|${BH_HOST_PORT}|${BH_PROFILE_VOLUME}|${downloads_dir}|${BH_DOCKER_EXTRA_ARGS:-}|${PATCHRIGHT_HEADLESS:-0}|${PATCHRIGHT_EXTRA_ARGS:-}|${PATCHRIGHT_BROWSER_EXECUTABLE:-/usr/bin/chromium}|${PATCHRIGHT_BROWSER_CHANNEL:-}|${CHROMIUM_SANDBOX:-0}"
+
+# This project wrapper is intentionally local-only: no browser-harness cloud
+# browsers, no real-browser cookie/profile import, and no public CDP binding.
+
+cdp_url="http://127.0.0.1:${BH_HOST_PORT}"
+cdp_ws=""
+bh_env=()
+
+usage() {
+  echo "Usage: $0 {run|url|status|reload|stop|logs|shell} [browser-harness args]" >&2
+}
+
+fail() {
+  echo "browser-harness wrapper error: $*" >&2
+  exit 1
+}
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Required command not found: $1" >&2
+    exit 127
+  fi
+}
+
+ensure_state_dirs() {
+  mkdir -p "$home_dir" "$runtime_dir" "$tmp_dir" "$downloads_dir"
+}
+
+require_docker() {
+  require_cmd docker
+  if ! docker info >/dev/null 2>&1; then
+    cat >&2 <<MSG
+Docker is unavailable or not running.
+Fix: start Docker Desktop, or start the native Linux Docker daemon and ensure your user can access it.
+See ${docs_failure}.
+MSG
+    exit 1
+  fi
+}
+
+build_bh_env() {
+  bh_env=(
+    "BU_NAME=${BH_BU_NAME}"
+    "BU_CDP_URL=${cdp_url}"
+    "BH_HOME=${home_dir}"
+    "BH_RUNTIME_DIR=${runtime_dir}"
+    "BH_TMP_DIR=${tmp_dir}"
+  )
+
+  if [[ -n "$cdp_ws" ]]; then
+    bh_env+=("BU_CDP_WS=${cdp_ws}")
+  fi
+}
+
+run_browser_harness_env() {
+  build_bh_env
+  env "${bh_env[@]}" "$@"
+}
+
+port_is_free() {
+  python3 - "$BH_HOST_PORT" <<'PY'
+import socket
+import sys
+port = int(sys.argv[1])
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+try:
+    s.bind(("127.0.0.1", port))
+except OSError:
+    sys.exit(1)
+finally:
+    s.close()
+PY
+}
+
+explain_port_collision() {
+  cat >&2 <<MSG
+Port collision: 127.0.0.1:${BH_HOST_PORT} is already in use.
+Fix: change BH_HOST_PORT in .browser-harness.env, then run:
+  ./scripts/bh stop
+  ./scripts/bh reload
+  ./scripts/bh url
+If an old Docker container owns the fixed mapping, remove/recreate it:
+  docker rm -f "${BH_CONTAINER_NAME}"
+  ./scripts/bh url
+See ${docs_failure} (Port collision).
+MSG
+}
+
+explain_shm_or_memory() {
+  cat >&2 <<MSG
+Chrome appears to have crashed before CDP became ready, commonly due to Docker memory or /dev/shm limits.
+Fix for Docker Desktop: keep or raise BH_DOCKER_EXTRA_ARGS='--shm-size=2g'.
+Fix for native Linux: consider BH_DOCKER_EXTRA_ARGS='--ipc=host' or a complete seccomp profile if enabling CHROMIUM_SANDBOX=1.
+Then run:
+  ./scripts/bh stop
+  ./scripts/bh url
+See ${docs_cdp} and docs/05-security-and-operations.md#sandbox-notes.
+MSG
+}
+
+inspect_recent_container_failure() {
+  local logs=""
+  local oom=""
+  local exited=""
+
+  logs="$(docker logs --tail=160 "$BH_CONTAINER_NAME" 2>&1 || true)"
+  oom="$(docker inspect -f '{{.State.OOMKilled}}' "$BH_CONTAINER_NAME" 2>/dev/null || true)"
+  exited="$(docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' "$BH_CONTAINER_NAME" 2>/dev/null || true)"
+
+  if [[ "$oom" == "true" ]] || grep -Eiq 'out of memory|oom|sigbus|no space left on device|/dev/shm|shared memory|chrome.*crash|chromium.*crash|target page, context or browser has been closed' <<<"$logs"; then
+    echo "Container state: ${exited:-unknown}" >&2
+    echo "Recent container logs:" >&2
+    echo "$logs" >&2
+    explain_shm_or_memory
+    exit 1
+  fi
+}
+
+container_exists() {
+  docker container inspect "$BH_CONTAINER_NAME" >/dev/null 2>&1
+}
+
+container_running() {
+  [[ "$(docker inspect -f '{{.State.Running}}' "$BH_CONTAINER_NAME" 2>/dev/null || true)" == "true" ]]
+}
+
+container_config_matches() {
+  [[ "$(docker inspect -f '{{ index .Config.Labels "browser-harness.config-sig" }}' "$BH_CONTAINER_NAME" 2>/dev/null || true)" == "$config_sig" ]]
+}
+
+ensure_image() {
+  require_docker
+
+  if docker image inspect "$BH_IMAGE" >/dev/null 2>&1; then
+    return
+  fi
+
+  if [[ ! -d "$image_context" ]]; then
+    fail "Docker image context is missing: $image_context"
+  fi
+
+  echo "Building missing browser-harness image: $BH_IMAGE" >&2
+  local -a platform_args=()
+  if [[ -n "$BH_DOCKER_PLATFORM" ]]; then
+    platform_args=(--platform "$BH_DOCKER_PLATFORM")
+  fi
+  if ! docker build "${platform_args[@]}" -t "$BH_IMAGE" "$image_context"; then
+    cat >&2 <<MSG
+Image build failed for ${BH_IMAGE}.
+Fix: inspect the build output above, verify Docker is healthy, and retry ./scripts/bh url.
+See ${docs_failure}.
+MSG
+    exit 1
+  fi
+}
+
+ensure_profile_volume() {
+  require_docker
+  # Idempotent: creates the isolated Chrome profile volume only if absent.
+  docker volume create "$BH_PROFILE_VOLUME" >/dev/null
+}
+
+start_existing_container() {
+  local output=""
+  if output="$(docker start "$BH_CONTAINER_NAME" 2>&1)"; then
+    return
+  fi
+
+  echo "$output" >&2
+  if grep -Eiq 'port is already allocated|bind.*address already in use|Ports are not available' <<<"$output"; then
+    explain_port_collision
+    exit 1
+  fi
+
+  inspect_recent_container_failure
+  fail "Docker failed to start ${BH_CONTAINER_NAME}. See ${docs_failure}."
+}
+
+create_container() {
+  local -a extra_args=()
+  local -a platform_args=()
+
+  if ! port_is_free; then
+    explain_port_collision
+    exit 1
+  fi
+
+  if [[ -n "${BH_DOCKER_EXTRA_ARGS:-}" ]]; then
+    # Project-owned config; intentionally split into Docker args.
+    # Docker Desktop: --shm-size=2g is the conservative default.
+    # Native Linux: --ipc=host can be useful, but keep CDP publishing loopback-only below.
+    # shellcheck disable=SC2206
+    extra_args=(${BH_DOCKER_EXTRA_ARGS})
+    local i=0
+    local arg=""
+    local next=""
+    while (( i < ${#extra_args[@]} )); do
+      arg="${extra_args[$i]}"
+      case "$arg" in
+        --shm-size=*)
+          ;;
+        --shm-size)
+          i=$((i + 1))
+          if (( i >= ${#extra_args[@]} )); then
+            fail "BH_DOCKER_EXTRA_ARGS --shm-size requires a value"
+          fi
+          next="${extra_args[$i]}"
+          if [[ ! "$next" =~ ^[0-9]+[kKmMgG]?$ ]]; then
+            fail "BH_DOCKER_EXTRA_ARGS --shm-size value is invalid: $next"
+          fi
+          ;;
+        --ipc=host)
+          ;;
+        --ipc)
+          i=$((i + 1))
+          if (( i >= ${#extra_args[@]} )) || [[ "${extra_args[$i]}" != "host" ]]; then
+            fail "BH_DOCKER_EXTRA_ARGS only allows --ipc host"
+          fi
+          ;;
+        --security-opt=seccomp=/*)
+          ;;
+        --security-opt)
+          i=$((i + 1))
+          if (( i >= ${#extra_args[@]} )) || [[ ! "${extra_args[$i]}" == seccomp=/* ]]; then
+            fail "BH_DOCKER_EXTRA_ARGS only allows --security-opt seccomp=<absolute-path>"
+          fi
+          ;;
+        *)
+          fail "BH_DOCKER_EXTRA_ARGS allows only --shm-size, --ipc=host, and --security-opt seccomp=<absolute-path>; rejected: $arg"
+          ;;
+      esac
+      i=$((i + 1))
+    done
+  fi
+  if [[ -n "$BH_DOCKER_PLATFORM" ]]; then
+    platform_args=(--platform "$BH_DOCKER_PLATFORM")
+  fi
+
+  local output=""
+  if output="$(docker run -d \
+    --name "$BH_CONTAINER_NAME" \
+    "${platform_args[@]}" \
+    --init \
+    "${extra_args[@]}" \
+    -p "127.0.0.1:${BH_HOST_PORT}:9222" \
+    --add-host=host.docker.internal:host-gateway \
+    -e CDP_PORT=9222 \
+    -e CDP_HOST=0.0.0.0 \
+    -e PATCHRIGHT_HEADLESS="${PATCHRIGHT_HEADLESS:-0}" \
+    -e PATCHRIGHT_EXTRA_ARGS="${PATCHRIGHT_EXTRA_ARGS:-}" \
+    -e PATCHRIGHT_BROWSER_EXECUTABLE="${PATCHRIGHT_BROWSER_EXECUTABLE:-/usr/bin/chromium}" \
+    -e PATCHRIGHT_BROWSER_CHANNEL="${PATCHRIGHT_BROWSER_CHANNEL:-}" \
+    -e CHROMIUM_SANDBOX="${CHROMIUM_SANDBOX:-0}" \
+    -v "${BH_PROFILE_VOLUME}:/data/profile" \
+    -v "${downloads_dir}:/data/downloads" \
+    -v "${project_root}:${project_root}:rw" \
+    -w "$project_root" \
+    --label "browser-harness.project=${BH_PROJECT_SLUG}" \
+    --label "browser-harness.project-root=${project_root}" \
+    --label "browser-harness.config-sig=${config_sig}" \
+    "$BH_IMAGE" 2>&1)"; then
+    return
+  fi
+
+  echo "$output" >&2
+  if grep -Eiq 'port is already allocated|bind.*address already in use|Ports are not available' <<<"$output"; then
+    explain_port_collision
+    exit 1
+  fi
+
+  fail "Docker failed to create ${BH_CONTAINER_NAME}. See ${docs_failure}."
+}
+
+ensure_container() {
+  require_docker
+  ensure_state_dirs
+  ensure_image
+  ensure_profile_volume
+
+  if container_exists && ! container_config_matches; then
+    echo "Container config changed; recreating ${BH_CONTAINER_NAME}." >&2
+    docker rm -f "$BH_CONTAINER_NAME" >/dev/null || true
+  fi
+
+  if container_running; then
+    return
+  fi
+
+  if container_exists; then
+    start_existing_container
+  else
+    create_container
+  fi
+}
+
+wait_for_cdp() {
+  require_cmd curl
+
+  local timeout_s="${BH_CDP_TIMEOUT_SECONDS:-30}"
+  local deadline=$((SECONDS + timeout_s))
+  local json=""
+  local status=""
+
+  while (( SECONDS < deadline )); do
+    if ! container_running; then
+      echo "Container ${BH_CONTAINER_NAME} exited before CDP became ready." >&2
+      inspect_recent_container_failure
+      docker logs --tail=160 "$BH_CONTAINER_NAME" >&2 || true
+      cat >&2 <<MSG
+CDP endpoint not ready: ${cdp_url}/json/version.
+Fix: inspect ./scripts/bh logs. Common causes are a bad image, a port collision, or Chrome memory/shared-memory limits.
+See ${docs_cdp}.
+MSG
+      exit 1
+    fi
+
+    if json="$(curl -fsS --max-time 2 "${cdp_url}/json/version" 2>/dev/null)"; then
+      cdp_ws="$(python3 -c 'import json,re,sys; host_port=sys.argv[1]; ws=json.load(sys.stdin).get("webSocketDebuggerUrl", ""); print(re.sub(r"^ws://[^/]+", f"ws://127.0.0.1:{host_port}", ws))' "$BH_HOST_PORT" <<<"$json" 2>/dev/null || true)"
+      if [[ -n "$cdp_ws" ]]; then
+        return
+      fi
+      status="ready response missing webSocketDebuggerUrl"
+    else
+      status="not ready"
+    fi
+
+    sleep 0.25
+  done
+
+  inspect_recent_container_failure
+  echo "Timed out after ${timeout_s}s waiting for CDP endpoint: ${cdp_url}/json/version (${status})." >&2
+  echo "Recent container logs:" >&2
+  docker logs --tail=160 "$BH_CONTAINER_NAME" >&2 || true
+  cat >&2 <<MSG
+CDP endpoint not ready.
+Fix: run ./scripts/bh logs and follow docs/06 failure-mode 'CDP endpoint not ready'.
+Common fixes: resolve port collision, rebuild a failed image, or raise Docker memory/shared-memory limits.
+See ${docs_cdp}.
+MSG
+  exit 1
+}
+
+launch_browser() {
+  require_cmd python3
+  ensure_container
+  wait_for_cdp
+}
+
+reload_daemon_if_config_changed() {
+  require_cmd browser-harness
+
+  local sig_file="$state_dir/daemon.envsig"
+  local sig="${BH_BU_NAME}|${cdp_url}|${cdp_ws}|${BH_CONTAINER_NAME}|${BH_PROFILE_VOLUME}"
+
+  if [[ "${BH_FORCE_RELOAD:-0}" == "1" || ! -f "$sig_file" || "$(cat "$sig_file")" != "$sig" ]]; then
+    run_browser_harness_env browser-harness --reload >/dev/null 2>&1 || true
+    printf "%s" "$sig" > "$sig_file"
+  fi
+}
+
+stop_daemon() {
+  if command -v browser-harness >/dev/null 2>&1; then
+    run_browser_harness_env browser-harness --reload >/dev/null 2>&1 || true
+  else
+    echo "browser-harness not found; skipped daemon reload/stop." >&2
+  fi
+}
+
+case "$cmd" in
+  run)
+    require_cmd browser-harness
+    launch_browser
+    reload_daemon_if_config_changed
+    build_bh_env
+    exec env "${bh_env[@]}" browser-harness "$@"
+    ;;
+
+  url)
+    launch_browser
+    echo "$cdp_url"
+    ;;
+
+  status)
+    echo "project_root=$project_root"
+    echo "project_slug=$BH_PROJECT_SLUG"
+    echo "container=$BH_CONTAINER_NAME"
+    echo "image=$BH_IMAGE"
+    echo "docker_platform=$BH_DOCKER_PLATFORM"
+    echo "cdp_url=$cdp_url"
+    echo "bu_name=$BH_BU_NAME"
+    echo "profile_volume=$BH_PROFILE_VOLUME"
+    echo "downloads_dir=$downloads_dir"
+    if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+      echo "docker_available=yes"
+      echo "container_exists=$(container_exists && echo yes || echo no)"
+      echo "running=$(container_running && echo yes || echo no)"
+    else
+      echo "docker_available=no"
+      echo "container_exists=unknown"
+      echo "running=unknown"
+    fi
+    ;;
+
+  reload)
+    stop_daemon
+    require_docker
+    if container_exists; then
+      docker rm -f "$BH_CONTAINER_NAME" >/dev/null || true
+    fi
+    launch_browser
+    ;;
+
+  stop)
+    require_docker
+    stop_daemon
+    if container_exists; then
+      docker stop "$BH_CONTAINER_NAME" >/dev/null || true
+    fi
+    ;;
+
+  logs)
+    require_docker
+    if ! container_exists; then
+      fail "Container does not exist: ${BH_CONTAINER_NAME}. Run ./scripts/bh url first."
+    fi
+    docker logs -f "$BH_CONTAINER_NAME"
+    ;;
+
+  shell)
+    launch_browser
+    docker exec -it "$BH_CONTAINER_NAME" /bin/bash
+    ;;
+
+  *)
+    usage
+    exit 2
+    ;;
+esac

@@ -83,3 +83,15 @@ PY
 The browser-harness repository documents CDP-based browser control, `BU_NAME`, `BU_CDP_URL`, `BU_CDP_WS`, and `--reload`. Patchright's Python docs describe it as a Chromium-only Playwright replacement and recommend launching a persistent Chrome context with `channel="chrome"`, `headless=False`, and `no_viewport=True`. Chrome's own security guidance says remote debugging should use a non-default user data dir. Playwright's Docker documentation recommends `--init`, gives Chromium IPC/sandbox guidance, and shows the host-gateway pattern for reaching host services from inside a browser container.
 
 See the planning docs for implementation detail and cautions.
+
+## Browser automation
+
+For browser automation, use `./scripts/bh run`, never plain `browser-harness`. The wrapper uses the project's isolated Patchright Chrome container and will not attach to the user's normal browser.
+
+Full agent rules live in `.codex/skills/browser-harness/SKILL.md`; copy or adapt the skill from `templates/skills/browser-harness/SKILL.md` when installing this kit. Use `.browser-harness.env.example` for configuration values and keep any personal `.browser-harness.env` uncommitted.
+
+Configuration notes:
+
+- Docker Desktop: keep Chrome CDP published on loopback only, for example `127.0.0.1:${BH_HOST_PORT}:9222`, and use the Docker Desktop host gateway pattern when the browser must reach host services.
+- Native Linux: keep the same loopback-only CDP binding and prefer the minimal Docker options from the templates; use documented shared-memory/sandbox settings (for example `--ipc=host` or a complete seccomp profile) only when the project documents a specific need. Do not use host networking for CDP.
+- Do not use browser-harness cloud browsers, do not copy cookies from the user's real browser, and keep generated files to templates/examples rather than personal configuration.
