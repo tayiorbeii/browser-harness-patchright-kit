@@ -1,0 +1,61 @@
+# OS/editor local files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Runtime logs and transient output
+*.log
+logs/
+tmp/
+temp/
+.cache/
+
+# Dependencies and build/test output
+node_modules/
+.pnpm-store/
+.yarn/
+dist/
+build/
+coverage/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local environment files and secrets
+.env
+.env.*
+*.env
+*.env.*
+.browser-harness.env
+.browser-harness.env.*
+*.local
+*.secret
+*.secrets
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+
+# Keep sanitized examples/templates trackable
+!.env.example
+!*.env.example
+!*.env.template
+!templates/**/*.env.template
+!.browser-harness.env.example
+!templates/.browser-harness.env.template
+
+# Browser harness project-local runtime state
+.browser-harness/
+
+# Local pi/agent state
+.pi/

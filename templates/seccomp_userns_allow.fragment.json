@@ -1,0 +1,12 @@
+{
+  "comment": "Fragment only: allow create user namespaces for Chromium sandbox. Do not pass this file directly to Docker as a complete seccomp profile; merge it into Docker's default seccomp profile or download the official Playwright seccomp_profile.json.",
+  "names": [
+    "clone",
+    "setns",
+    "unshare"
+  ],
+  "action": "SCMP_ACT_ALLOW",
+  "args": [],
+  "includes": {},
+  "excludes": {}
+}

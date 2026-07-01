@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+cmd="${1:-run}"
+if [[ $# -gt 0 ]]; then
+  shift || true
+fi
+
+project_root="${BH_PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+config_file="$project_root/.browser-harness.env"
+
+if [[ ! -f "$config_file" ]]; then
+  echo "Missing $config_file" >&2
+  echo "Copy .browser-harness.env.example to .browser-harness.env and edit project-specific values." >&2
+  exit 2
+fi
+
+set -a
+# shellcheck disable=SC1090
+source "$config_file"
+set +a
+
+: "${BH_PROJECT_SLUG:?BH_PROJECT_SLUG is required}"
+: "${BH_CONTAINER_NAME:?BH_CONTAINER_NAME is required}"
+: "${BH_IMAGE:?BH_IMAGE is required}"
+: "${BH_HOST_PORT:?BH_HOST_PORT is required}"
+: "${BH_BU_NAME:?BH_BU_NAME is required}"
+: "${BH_PROFILE_VOLUME:?BH_PROFILE_VOLUME is required}"
+
+if [[ ! "$BH_BU_NAME" =~ ^[A-Za-z0-9_-]{1,64}$ ]]; then
+  echo "Invalid BH_BU_NAME: $BH_BU_NAME. Use only A-Z, a-z, 0-9, underscore, hyphen." >&2
+  exit 2
+fi
+
+state_dir="$project_root/.browser-harness"
+home_dir="$state_dir/home"
+runtime_dir="$state_dir/runtime"
+tmp_dir="$state_dir/tmp"
+downloads_dir="$project_root/${BH_DOWNLOADS_DIR:-.browser-harness/downloads}"
+
+mkdir -p "$home_dir" "$runtime_dir" "$tmp_dir" "$downloads_dir"
+
+cdp_url="http://127.0.0.1:${BH_HOST_PORT}"
+
+bh_env=(
+  "BU_NAME=${BH_BU_NAME}"
+  "BU_CDP_URL=${cdp_url}"
+  "BH_HOME=${home_dir}"
+  "BH_RUNTIME_DIR=${runtime_dir}"
+  "BH_TMP_DIR=${tmp_dir}"
+)
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Required command not found: $1" >&2
+    exit 127
+  fi
+}
+
+build_image() {
+  require_cmd docker
+
+  if ! docker image inspect "$BH_IMAGE" >/dev/null 2>&1; then
+    docker build \
+      -t "$BH_IMAGE" \
+      "$project_root/docker/browser-harness-patchright"
+  fi
+}
+
+container_exists() {
+  docker container inspect "$BH_CONTAINER_NAME" >/dev/null 2>&1
+}
+
+container_running() {
+  [[ "$(docker inspect -f '{{.State.Running}}' "$BH_CONTAINER_NAME" 2>/dev/null || true)" == "true" ]]
+}
+
+start_container() {
+  require_cmd docker
+
+  if container_running; then
+    return
+  fi
+
+  if container_exists; then
+    docker start "$BH_CONTAINER_NAME" >/dev/null
+    return
+  fi
+
+  build_image
+  docker volume create "$BH_PROFILE_VOLUME" >/dev/null
+
+  extra_args=()
+  if [[ -n "${BH_DOCKER_EXTRA_ARGS:-}" ]]; then
+    # Project-owned config; intentionally split into Docker args.
+    # shellcheck disable=SC2206
+    extra_args=(${BH_DOCKER_EXTRA_ARGS})
+  fi
+
+  docker run -d \
+    --name "$BH_CONTAINER_NAME" \
+    --init \
+    "${extra_args[@]}" \
+    -p "127.0.0.1:${BH_HOST_PORT}:9222" \
+    --add-host=host.docker.internal:host-gateway \
+    -e CDP_PORT=9222 \
+    -e CDP_HOST=0.0.0.0 \
+    -e PATCHRIGHT_HEADLESS="${PATCHRIGHT_HEADLESS:-0}" \
+    -e PATCHRIGHT_EXTRA_ARGS="${PATCHRIGHT_EXTRA_ARGS:-}" \
+    -e CHROMIUM_SANDBOX="${CHROMIUM_SANDBOX:-0}" \
+    -v "${BH_PROFILE_VOLUME}:/data/profile" \
+    -v "${downloads_dir}:/data/downloads" \
+    -v "${project_root}:${project_root}:rw" \
+    -w "$project_root" \
+    --label "browser-harness.project=${BH_PROJECT_SLUG}" \
+    --label "browser-harness.project-root=${project_root}" \
+    "$BH_IMAGE" >/dev/null
+}
+
+wait_for_cdp() {
+  require_cmd curl
+
+  for _ in $(seq 1 120); do
+    if curl -fsS "${cdp_url}/json/version" >/dev/null 2>&1; then
+      return
+    fi
+    sleep 0.25
+  done
+
+  echo "CDP endpoint did not become ready: ${cdp_url}" >&2
+  echo "Container logs:" >&2
+  docker logs --tail=120 "$BH_CONTAINER_NAME" >&2 || true
+  exit 1
+}
+
+reload_daemon_if_config_changed() {
+  require_cmd browser-harness
+
+  sig_file="$state_dir/daemon.envsig"
+  sig="${BH_BU_NAME}|${cdp_url}|${BH_CONTAINER_NAME}|${BH_PROFILE_VOLUME}"
+
+  if [[ "${BH_FORCE_RELOAD:-0}" == "1" || ! -f "$sig_file" || "$(cat "$sig_file")" != "$sig" ]]; then
+    env "${bh_env[@]}" browser-harness --reload >/dev/null 2>&1 || true
+    printf "%s" "$sig" > "$sig_file"
+  fi
+}
+
+case "$cmd" in
+  run)
+    require_cmd browser-harness
+    start_container
+    wait_for_cdp
+    reload_daemon_if_config_changed
+    exec env "${bh_env[@]}" browser-harness "$@"
+    ;;
+
+  url)
+    start_container
+    wait_for_cdp
+    echo "$cdp_url"
+    ;;
+
+  status)
+    echo "project_root=$project_root"
+    echo "project_slug=$BH_PROJECT_SLUG"
+    echo "container=$BH_CONTAINER_NAME"
+    echo "running=$(container_running && echo yes || echo no)"
+    echo "image=$BH_IMAGE"
+    echo "cdp_url=$cdp_url"
+    echo "bu_name=$BH_BU_NAME"
+    echo "profile_volume=$BH_PROFILE_VOLUME"
+    echo "downloads_dir=$downloads_dir"
+    ;;
+
+  reload)
+    require_cmd browser-harness
+    env "${bh_env[@]}" browser-harness --reload || true
+    ;;
+
+  stop)
+    require_cmd docker
+    if command -v browser-harness >/dev/null 2>&1; then
+      env "${bh_env[@]}" browser-harness --reload >/dev/null 2>&1 || true
+    fi
+    if container_exists; then
+      docker stop "$BH_CONTAINER_NAME" >/dev/null || true
+    fi
+    ;;
+
+  logs)
+    require_cmd docker
+    docker logs -f "$BH_CONTAINER_NAME"
+    ;;
+
+  shell)
+    require_cmd docker
+    start_container
+    docker exec -it "$BH_CONTAINER_NAME" /bin/bash
+    ;;
+
+  *)
+    echo "Usage: $0 {run|url|status|reload|stop|logs|shell}" >&2
+    exit 2
+    ;;
+esac

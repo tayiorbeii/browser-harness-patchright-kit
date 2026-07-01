@@ -1,0 +1,36 @@
+# Optional docker-compose reference.
+# The scripts/bh wrapper is the recommended path because it handles per-project
+# env, daemon reload, and browser-harness invocation. Use this compose file for
+# manual debugging or if your project already standardizes on compose.
+
+services:
+  browser-harness-patchright:
+    build:
+      context: ./docker/browser-harness-patchright
+      args:
+        PATCHRIGHT_VERSION: "1.61.1"
+    image: ${BH_IMAGE:-browser-harness-patchright:1.61.1}
+    container_name: ${BH_CONTAINER_NAME:-bh-my-app}
+    init: true
+    shm_size: "2gb"
+    ports:
+      - "127.0.0.1:${BH_HOST_PORT:-19322}:9222"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      CDP_HOST: 0.0.0.0
+      CDP_PORT: 9222
+      PATCHRIGHT_HEADLESS: ${PATCHRIGHT_HEADLESS:-0}
+      PATCHRIGHT_EXTRA_ARGS: ${PATCHRIGHT_EXTRA_ARGS:-}
+      CHROMIUM_SANDBOX: ${CHROMIUM_SANDBOX:-0}
+    volumes:
+      - bh_profile:/data/profile
+      - ./.browser-harness/downloads:/data/downloads
+      - ./:/workspace:rw
+    working_dir: /workspace
+    labels:
+      browser-harness.project: ${BH_PROJECT_SLUG:-my-app}
+
+volumes:
+  bh_profile:
+    name: ${BH_PROFILE_VOLUME:-bh-my-app-profile}
