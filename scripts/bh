@@ -41,6 +41,59 @@ if [[ ! "$BH_HOST_PORT" =~ ^[0-9]+$ || "$BH_HOST_PORT" -lt 1 || "$BH_HOST_PORT" 
   exit 2
 fi
 
+if [[ -n "${BH_VNC_PORT:-}" ]]; then
+  if [[ ! "$BH_VNC_PORT" =~ ^[0-9]+$ || "$BH_VNC_PORT" -lt 1 || "$BH_VNC_PORT" -gt 65535 ]]; then
+    echo "Invalid BH_VNC_PORT: $BH_VNC_PORT. Use an unused localhost TCP port, or leave it unset." >&2
+    exit 2
+  fi
+  if [[ "$BH_VNC_PORT" == "$BH_HOST_PORT" ]]; then
+    echo "BH_VNC_PORT must differ from BH_HOST_PORT." >&2
+    exit 2
+  fi
+  if [[ "${PATCHRIGHT_HEADLESS:-0}" != "0" ]]; then
+    echo "BH_VNC_PORT requires headed Chrome. Unset PATCHRIGHT_HEADLESS or set it to 0." >&2
+    exit 2
+  fi
+fi
+
+if [[ -n "${BH_BROWSER_ORIGIN:-}" ]]; then
+  if ! python3 - "$BH_BROWSER_ORIGIN" <<'PY'
+import sys
+from urllib.parse import urlsplit
+
+value = sys.argv[1]
+try:
+    parsed = urlsplit(value)
+    port = parsed.port
+except ValueError:
+    raise SystemExit(1)
+
+host = parsed.hostname
+canonical_netloc = ""
+if host is not None:
+    canonical_host = f"[{host}]" if ":" in host else host
+    canonical_netloc = canonical_host + (f":{port}" if port is not None else "")
+
+valid = (
+    value == value.strip()
+    and not any(char.isspace() for char in value)
+    and parsed.scheme in {"http", "https"}
+    and value.startswith(f"{parsed.scheme}://")
+    and parsed.netloc == canonical_netloc
+    and parsed.username is None
+    and parsed.password is None
+    and parsed.path in {"", "/"}
+    and "?" not in value
+    and "#" not in value
+)
+raise SystemExit(0 if valid else 1)
+PY
+  then
+    echo "Invalid BH_BROWSER_ORIGIN. Use a canonical http(s) origin without credentials, path, query, or fragment." >&2
+    exit 2
+  fi
+fi
+
 state_dir="$project_root/.browser-harness"
 home_dir="$state_dir/home"
 project_hash="$(python3 -c 'import hashlib,sys; print(hashlib.sha1(sys.argv[1].encode()).hexdigest()[:12])' "$project_root")"
@@ -51,7 +104,7 @@ runtime_dir="${BH_RUNTIME_DIR:-${TMPDIR:-/tmp}/bh-${project_hash}/runtime}"
 tmp_dir="${BH_TMP_DIR:-${TMPDIR:-/tmp}/bh-${project_hash}/tmp}"
 downloads_dir="$project_root/${BH_DOWNLOADS_DIR:-.browser-harness/downloads}"
 image_context="$project_root/docker/browser-harness-patchright"
-config_sig="${BH_IMAGE}|${BH_DOCKER_PLATFORM}|${BH_HOST_PORT}|${BH_PROFILE_VOLUME}|${downloads_dir}|${BH_DOCKER_EXTRA_ARGS:-}|${PATCHRIGHT_HEADLESS:-0}|${PATCHRIGHT_EXTRA_ARGS:-}|${PATCHRIGHT_BROWSER_EXECUTABLE:-/usr/bin/chromium}|${PATCHRIGHT_BROWSER_CHANNEL:-}|${CHROMIUM_SANDBOX:-0}"
+config_sig="${BH_IMAGE}|${BH_DOCKER_PLATFORM}|${BH_HOST_PORT}|${BH_PROFILE_VOLUME}|${downloads_dir}|${BH_DOCKER_EXTRA_ARGS:-}|${PATCHRIGHT_HEADLESS:-0}|${PATCHRIGHT_EXTRA_ARGS:-}|${PATCHRIGHT_BROWSER_EXECUTABLE:-/usr/bin/chromium}|${PATCHRIGHT_BROWSER_CHANNEL:-}|${CHROMIUM_SANDBOX:-0}|${BH_HOST_RESOLVER_RULES:-}|${BH_BROWSER_ORIGIN:-}|${BH_VNC_PORT:-}"
 
 # This project wrapper is intentionally local-only: no browser-harness cloud
 # browsers, no real-browser cookie/profile import, and no public CDP binding.
@@ -61,7 +114,7 @@ cdp_ws=""
 bh_env=()
 
 usage() {
-  echo "Usage: $0 {run|url|status|reload|stop|logs|shell} [browser-harness args]" >&2
+  echo "Usage: $0 {run|url|status|reload|stop|purge|logs|shell} [browser-harness args]" >&2
 }
 
 fail() {
@@ -291,6 +344,12 @@ create_container() {
     platform_args=(--platform "$BH_DOCKER_PLATFORM")
   fi
 
+  local -a vnc_args=()
+  if [[ -n "${BH_VNC_PORT:-}" ]]; then
+    # Loopback-only, exactly like CDP. Never publish this on 0.0.0.0.
+    vnc_args=(-p "127.0.0.1:${BH_VNC_PORT}:5900")
+  fi
+
   local output=""
   if output="$(docker run -d \
     --name "$BH_CONTAINER_NAME" \
@@ -298,11 +357,14 @@ create_container() {
     --init \
     "${extra_args[@]}" \
     -p "127.0.0.1:${BH_HOST_PORT}:9222" \
+    "${vnc_args[@]}" \
+    -e BH_VNC_ENABLED="$([[ -n "${BH_VNC_PORT:-}" ]] && echo 1 || echo 0)" \
     --add-host=host.docker.internal:host-gateway \
     -e CDP_PORT=9222 \
     -e CDP_HOST=0.0.0.0 \
     -e PATCHRIGHT_HEADLESS="${PATCHRIGHT_HEADLESS:-0}" \
     -e PATCHRIGHT_EXTRA_ARGS="${PATCHRIGHT_EXTRA_ARGS:-}" \
+    -e BH_HOST_RESOLVER_RULES="${BH_HOST_RESOLVER_RULES:-}" \
     -e PATCHRIGHT_BROWSER_EXECUTABLE="${PATCHRIGHT_BROWSER_EXECUTABLE:-/usr/bin/chromium}" \
     -e PATCHRIGHT_BROWSER_CHANNEL="${PATCHRIGHT_BROWSER_CHANNEL:-}" \
     -e CHROMIUM_SANDBOX="${CHROMIUM_SANDBOX:-0}" \
@@ -405,7 +467,7 @@ reload_daemon_if_config_changed() {
   require_cmd browser-harness
 
   local sig_file="$state_dir/daemon.envsig"
-  local sig="${BH_BU_NAME}|${cdp_url}|${cdp_ws}|${BH_CONTAINER_NAME}|${BH_PROFILE_VOLUME}"
+  local sig="${BH_BU_NAME}|${cdp_url}|${cdp_ws}|${BH_CONTAINER_NAME}|${BH_PROFILE_VOLUME}|${BH_HOST_RESOLVER_RULES:-}|${BH_BROWSER_ORIGIN:-}"
 
   if [[ "${BH_FORCE_RELOAD:-0}" == "1" || ! -f "$sig_file" || "$(cat "$sig_file")" != "$sig" ]]; then
     run_browser_harness_env browser-harness --reload >/dev/null 2>&1 || true
@@ -442,6 +504,15 @@ case "$cmd" in
     echo "image=$BH_IMAGE"
     echo "docker_platform=$BH_DOCKER_PLATFORM"
     echo "cdp_url=$cdp_url"
+    if [[ -n "${BH_BROWSER_ORIGIN:-}" ]]; then
+      echo "browser_origin=$BH_BROWSER_ORIGIN"
+    fi
+    if [[ -n "${BH_HOST_RESOLVER_RULES:-}" ]]; then
+      echo "host_resolver_rules_configured=yes"
+    fi
+    if [[ -n "${BH_VNC_PORT:-}" ]]; then
+      echo "vnc_url=vnc://127.0.0.1:${BH_VNC_PORT}"
+    fi
     echo "bu_name=$BH_BU_NAME"
     echo "profile_volume=$BH_PROFILE_VOLUME"
     echo "downloads_dir=$downloads_dir"
@@ -471,6 +542,45 @@ case "$cmd" in
     if container_exists; then
       docker stop "$BH_CONTAINER_NAME" >/dev/null || true
     fi
+    ;;
+
+  purge)
+    # Destroys every piece of state this project's browser accumulates: the
+    # container, the Chrome profile volume (cookies, history, localStorage,
+    # logins), and the local runtime/downloads directory. Use it before sharing
+    # a checkout, or to reset a profile that has personal data in it.
+    require_docker
+
+    if [[ "${1:-}" != "--yes" && "${BH_PURGE_ASSUME_YES:-0}" != "1" ]]; then
+      cat >&2 <<MSG
+This permanently deletes, for project '${BH_PROJECT_SLUG}':
+  container       ${BH_CONTAINER_NAME}
+  profile volume  ${BH_PROFILE_VOLUME}   (all container Chrome cookies/history/logins)
+  local state     ${state_dir}           (downloads, runtime, tmp, home)
+The Docker image is kept. Re-run ./scripts/bh url to start clean.
+MSG
+      printf 'Type the project slug to confirm: ' >&2
+      read -r confirm
+      if [[ "$confirm" != "$BH_PROJECT_SLUG" ]]; then
+        fail "Confirmation did not match; nothing was deleted."
+      fi
+    fi
+
+    stop_daemon
+    if container_exists; then
+      docker rm -f "$BH_CONTAINER_NAME" >/dev/null || true
+      echo "removed container ${BH_CONTAINER_NAME}"
+    fi
+    if docker volume inspect "$BH_PROFILE_VOLUME" >/dev/null 2>&1; then
+      docker volume rm "$BH_PROFILE_VOLUME" >/dev/null || fail "Could not remove volume ${BH_PROFILE_VOLUME}. Stop anything still using it and retry."
+      echo "removed profile volume ${BH_PROFILE_VOLUME}"
+    fi
+    if [[ -d "$state_dir" ]]; then
+      find "$state_dir" -type f -exec rm -f {} +
+      find "$state_dir" -depth -type d -exec rmdir {} + 2>/dev/null || true
+      echo "removed local state ${state_dir}"
+    fi
+    echo "purge complete for ${BH_PROJECT_SLUG}"
     ;;
 
   logs)

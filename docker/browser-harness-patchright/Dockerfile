@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
     curl \
     fonts-liberation \
+    x11vnc \
     xvfb \
     && rm -rf /var/lib/apt/lists/*
 
@@ -45,6 +46,11 @@ EXPOSE 9222
 # CDP is bound to 0.0.0.0 inside the container only. Host publishing must stay
 # loopback-only (for example 127.0.0.1:9222:9222) and is intentionally not
 # decided by this image.
+#
+# x11vnc is installed but never started unless BH_VNC_ENABLED=1. It exists for
+# one-time interactive work inside the isolated profile (for example signing in
+# to a service the harness must not sign in to on the operator's behalf). Like
+# CDP, its host publishing must stay loopback-only.
 #
 # Docker Desktop vs native Linux notes:
 # - Prefer `--shm-size=1g` (or larger) for headed Chrome stability. Avoid

@@ -59,3 +59,10 @@ id_ed25519*
 
 # Local pi/agent state
 .pi/
+.pi-subagents/
+
+# Agent run artifacts. These capture prompts and transcripts from whatever task
+# was running, which routinely includes absolute home paths and unrelated
+# project context. Keep them out of the repo.
+commit.json
+report.md

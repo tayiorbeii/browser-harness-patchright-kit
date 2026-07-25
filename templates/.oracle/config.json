@@ -1,0 +1,44 @@
+// Project-level Oracle config (JSON5). Oracle layers this over ~/.oracle/config.json.
+//
+// Project configs may only set workflow defaults. Provider routing, secrets and
+// machine-local browser paths (apiBaseUrl, azure, browser.remoteHost,
+// browser.remoteToken, browser.chromePath, browser.chromeCookiePath) are ignored
+// here by design. `browser.remoteChrome` is not a config key at all, so the CDP
+// target is passed per run by ./scripts/oracle as
+// `--remote-chrome 127.0.0.1:${BH_HOST_PORT}`.
+{
+  // Browser engine, so consults run against the project container instead of an
+  // API key. Set ORACLE_ENGINE=api to override globally for one caller.
+  engine: "browser",
+  model: "gpt-5.5-pro",
+  search: "on",
+  filesReport: true,
+  heartbeatSeconds: 30,
+
+  browser: {
+    chatgptUrl: "https://chatgpt.com/",
+    modelStrategy: "select",
+    thinkingTime: "extended",
+    researchMode: "off",
+
+    // The container browser is the only session Oracle may touch. These are
+    // pinned false so a user-level config cannot make a project run launch or
+    // reuse a local Chrome profile. Oracle ignores keepBrowser/hideWindow in
+    // remote-chrome mode; keeping them false avoids the "ignored flags" notice.
+    attachRunning: false,
+    manualLogin: false,
+    keepBrowser: false,
+    hideWindow: false,
+
+    // One work tab, matching the container's tab-lifecycle rule.
+    maxConcurrentTabs: 1,
+
+    // Browser consults on Pro models legitimately run for many minutes.
+    timeoutMs: 1800000,
+    inputTimeoutMs: 120000,
+    attachmentTimeoutMs: 90000,
+
+    // Leave the conversation in place so `oracle session <id>` can reattach.
+    archiveConversations: "never",
+  },
+}

@@ -9,6 +9,7 @@
 - `docs/05-security-and-operations.md`
 - `docs/06-testing-and-acceptance.md`
 - `docs/07-risks-and-open-questions.md`
+- `docs/09-oracle-integration.md`
 
 ## Prompts
 
@@ -22,6 +23,8 @@
 - `templates/docker/browser-harness-patchright/Dockerfile`
 - `templates/docker/browser-harness-patchright/launch_patchright_cdp.py`
 - `templates/scripts/bh`
+- `templates/scripts/oracle`
+- `templates/.oracle/config.json`
 - `templates/skills/browser-harness/SKILL.md`
 - `templates/seccomp_userns_allow.fragment.json`
 
@@ -32,5 +35,8 @@
 docker/browser-harness-patchright/Dockerfile
 docker/browser-harness-patchright/launch_patchright_cdp.py
 scripts/bh
+scripts/oracle
+scripts/test-browser-harness-connection
+.oracle/config.json
 .codex/skills/browser-harness/SKILL.md
 ```

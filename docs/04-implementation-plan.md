@@ -58,12 +58,7 @@ curl -fsS "$(./scripts/bh url)/json/version" | python -m json.tool
 Run:
 
 ```bash
-./scripts/bh run <<'PY'
-print(page_info())
-new_tab("https://example.com")
-wait_for_load()
-print(page_info())
-PY
+./scripts/bh run -c $'reuse_tab("https://example.com", close_others=True)\nwait_for_load()\nprint(page_info())'
 ```
 
 Expected result:

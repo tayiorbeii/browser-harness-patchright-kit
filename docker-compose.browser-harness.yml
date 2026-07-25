@@ -20,8 +20,11 @@ services:
     shm_size: "2gb"
 
     # CDP is sensitive: bind the host side to loopback only, never 0.0.0.0.
+    # The optional VNC port follows the same rule; uncomment it (and set
+    # BH_VNC_ENABLED=1 below) only for one-time interactive sign-in work.
     ports:
       - "127.0.0.1:${BH_HOST_PORT:-19322}:9222"
+      # - "127.0.0.1:${BH_VNC_PORT:-15900}:5900"
 
     # Lets the browser in Docker reach host dev servers as host.docker.internal.
     # Docker Desktop provides this automatically; native Linux needs host-gateway.
@@ -37,9 +40,13 @@ services:
       CDP_PORT: "9222"
       PATCHRIGHT_HEADLESS: ${PATCHRIGHT_HEADLESS:-0}
       PATCHRIGHT_EXTRA_ARGS: ${PATCHRIGHT_EXTRA_ARGS:-}
+      BH_HOST_RESOLVER_RULES: ${BH_HOST_RESOLVER_RULES:-}
       PATCHRIGHT_BROWSER_EXECUTABLE: ${PATCHRIGHT_BROWSER_EXECUTABLE:-/usr/bin/chromium}
       PATCHRIGHT_BROWSER_CHANNEL: ${PATCHRIGHT_BROWSER_CHANNEL:-}
       CHROMIUM_SANDBOX: ${CHROMIUM_SANDBOX:-0}
+      # Starts x11vnc on the Xvfb display. Requires the port mapping above and
+      # headed Chrome (PATCHRIGHT_HEADLESS=0).
+      BH_VNC_ENABLED: ${BH_VNC_ENABLED:-0}
 
     volumes:
       # Keep mounts narrow: project root only, mounted read/write at the same

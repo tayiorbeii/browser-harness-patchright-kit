@@ -6,6 +6,7 @@ ARG PATCHRIGHT_VERSION=1.61.1
 USER root
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    x11vnc \
     xvfb \
     curl \
     ca-certificates \

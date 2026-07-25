@@ -35,6 +35,71 @@ def env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def parse_host_resolver_rules(raw: str) -> str | None:
+    """Validate the dedicated Chromium host resolver setting.
+
+    Keep the Chromium rule expression as one launch argument. The supported
+    contract accepts comma-separated MAP and EXCLUDE directives, including the
+    common rule `MAP localhost host.docker.internal`.
+    """
+
+    value = raw.strip()
+    if not value:
+        return None
+    if value.startswith("--") or any(ord(char) < 32 or ord(char) == 127 for char in value):
+        raise ValueError("BH_HOST_RESOLVER_RULES must be a single Chromium rule expression")
+
+    for rule in value.split(","):
+        fields = rule.strip().split()
+        if not fields:
+            raise ValueError("BH_HOST_RESOLVER_RULES contains an empty rule")
+        directive = fields[0].upper()
+        if directive == "MAP" and len(fields) == 3:
+            continue
+        if directive == "EXCLUDE" and len(fields) == 2:
+            continue
+        raise ValueError(
+            "BH_HOST_RESOLVER_RULES accepts MAP <source> <target> or EXCLUDE <host> directives"
+        )
+
+    return value
+
+
+def build_launch_args(extra_args_raw: str, host_resolver_rules_raw: str) -> list[str]:
+    """Build and validate Chromium arguments owned by the harness contract."""
+
+    launch_args = [
+        f"--remote-debugging-address={CHROME_CDP_HOST}",
+        # The browser listens on loopback; a container-local TCP proxy publishes
+        # CDP on the container interface for Docker's loopback-only host mapping.
+        "--no-first-run",
+        "--no-default-browser-check",
+    ]
+
+    parsed_extra_args = shlex.split(extra_args_raw) if extra_args_raw.strip() else []
+    forbidden: list[str] = []
+    for arg in parsed_extra_args:
+        if arg.startswith(("--remote-debugging", "--user-data-dir")):
+            forbidden.append(arg)
+        elif arg == "--host-resolver-rules" or arg.startswith("--host-resolver-rules="):
+            forbidden.append(arg)
+        elif arg == "--ignore-certificate-errors" or arg.startswith("--ignore-certificate-errors="):
+            forbidden.append(arg)
+
+    if forbidden:
+        raise ValueError(
+            "PATCHRIGHT_EXTRA_ARGS contains harness-owned or broad certificate flags: "
+            f"{forbidden}"
+        )
+
+    resolver_rules = parse_host_resolver_rules(host_resolver_rules_raw)
+    if resolver_rules is not None:
+        launch_args.append(f"--host-resolver-rules={resolver_rules}")
+
+    launch_args.extend(parsed_extra_args)
+    return launch_args
+
+
 def start_xvfb(headless: bool) -> subprocess.Popen[bytes] | None:
     if headless:
         return None
@@ -49,6 +114,47 @@ def start_xvfb(headless: bool) -> subprocess.Popen[bytes] | None:
     )
 
     time.sleep(0.5)
+    return proc
+
+
+def start_vnc(headless: bool) -> subprocess.Popen[bytes] | None:
+    """Optionally expose the Xvfb display so an operator can drive Chrome by hand.
+
+    This exists for one-time interactive tasks the harness must not do for the
+    operator, such as signing in to a service inside the isolated project
+    profile. It is opt-in, it never starts in headless mode, and the host side
+    must publish the port on loopback only.
+    """
+
+    if headless or not env_bool("BH_VNC_ENABLED", False):
+        return None
+
+    display = os.environ.get("DISPLAY", ":99")
+    port = int(os.environ.get("BH_VNC_CONTAINER_PORT", "5900"))
+
+    proc = subprocess.Popen(
+        [
+            "x11vnc",
+            "-display",
+            display,
+            "-rfbport",
+            str(port),
+            "-listen",
+            "0.0.0.0",
+            "-forever",
+            "-shared",
+            "-nopw",
+            "-noxdamage",
+            "-quiet",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    print(
+        json.dumps({"status": "vnc", "display": display, "port": port}),
+        flush=True,
+    )
     return proc
 
 
@@ -137,6 +243,7 @@ def main() -> int:
             pass
 
     xvfb = start_xvfb(headless)
+    vnc = start_vnc(headless)
     context = None
 
     def shutdown(*_: object) -> None:
@@ -144,6 +251,8 @@ def main() -> int:
             if context is not None:
                 context.close()
         finally:
+            if vnc is not None:
+                vnc.terminate()
             if xvfb is not None:
                 xvfb.terminate()
             sys.exit(0)
@@ -153,20 +262,11 @@ def main() -> int:
 
     # Keep launch args minimal. Do not add stealth/anti-bot flags here; let
     # Patchright provide its own behavior so browser-harness does not diverge.
-    launch_args = [
-        f"--remote-debugging-address={CHROME_CDP_HOST}",
-        f"--remote-debugging-port={chrome_cdp_port}",
-        "--no-first-run",
-        "--no-default-browser-check",
-    ]
-    extra_args = os.environ.get("PATCHRIGHT_EXTRA_ARGS", "").strip()
-    if extra_args:
-        parsed_extra_args = shlex.split(extra_args)
-        forbidden_prefixes = ("--remote-debugging", "--user-data-dir")
-        forbidden = [arg for arg in parsed_extra_args if arg.startswith(forbidden_prefixes)]
-        if forbidden:
-            raise ValueError(f"PATCHRIGHT_EXTRA_ARGS may not override CDP/profile flags: {forbidden}")
-        launch_args.extend(parsed_extra_args)
+    launch_args = build_launch_args(
+        os.environ.get("PATCHRIGHT_EXTRA_ARGS", ""),
+        os.environ.get("BH_HOST_RESOLVER_RULES", ""),
+    )
+    launch_args.insert(1, f"--remote-debugging-port={chrome_cdp_port}")
 
     with sync_playwright() as playwright:
         launch_options = {}
@@ -191,7 +291,16 @@ def main() -> int:
 
         wait_for_cdp(chrome_cdp_port)
         proxy = start_tcp_proxy(cdp_port, chrome_cdp_port)
-        print(json.dumps({"status": "proxy", "cdp": f"http://{CDP_HOST}:{cdp_port}", "target": f"http://{CHROME_CDP_HOST}:{chrome_cdp_port}"}), flush=True)
+        print(
+            json.dumps(
+                {
+                    "status": "proxy",
+                    "cdp": f"http://{CDP_HOST}:{cdp_port}",
+                    "target": f"http://{CHROME_CDP_HOST}:{chrome_cdp_port}",
+                }
+            ),
+            flush=True,
+        )
 
         while True:
             time.sleep(3600)

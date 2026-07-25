@@ -14,9 +14,7 @@ Use:
 ```text
 agent
   |
-  | ./scripts/bh run <<'PY'
-  |   new_tab("https://example.com")
-  | PY
+  | ./scripts/bh run -c $'reuse_tab("https://example.com", close_others=True)\nwait_for_load()\nprint(page_info())'
   v
 scripts/bh
   |

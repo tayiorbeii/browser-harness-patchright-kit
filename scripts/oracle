@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Run steipete/oracle browser consults against this project's Patchright Chrome
+# container instead of the operator's real Chrome.
+#
+# Oracle's browser engine drives a ChatGPT/Gemini web session over CDP. Its
+# `--remote-chrome <host:port>` mode attaches to an already-running browser and
+# never launches, copies, or reads a local Chrome profile, which is exactly the
+# boundary this kit wants: Oracle talks to the isolated container profile only.
+#
+# `browser.remoteChrome` is not a supported key in ~/.oracle/config.json or
+# .oracle/config.json, so the CDP target has to be passed per run. That is the
+# only reason this wrapper exists.
+
+cmd="${1:-run}"
+if [[ $# -gt 0 ]]; then
+  shift || true
+fi
+
+project_root="${BH_PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+config_file="$project_root/.browser-harness.env"
+bh="$project_root/scripts/bh"
+docs_oracle="docs/09-oracle-integration.md"
+
+if [[ ! -f "$config_file" ]]; then
+  echo "Missing $config_file" >&2
+  echo "Copy .browser-harness.env.example to .browser-harness.env and edit project-specific values." >&2
+  exit 2
+fi
+
+set -a
+# shellcheck disable=SC1090
+source "$config_file"
+set +a
+
+: "${BH_HOST_PORT:?BH_HOST_PORT is required}"
+
+remote_chrome="127.0.0.1:${BH_HOST_PORT}"
+
+usage() {
+  echo "Usage: $0 {run|plan|login|check|status} [oracle args]" >&2
+}
+
+fail() {
+  echo "oracle wrapper error: $*" >&2
+  exit 1
+}
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Required command not found: $1" >&2
+    exit 127
+  fi
+}
+
+# Flags that either fight --remote-chrome or pull data out of the operator's
+# real browser. Oracle silently ignores some of them in remote mode; this kit
+# rejects them so the isolation boundary stays obvious in the command line.
+reject_conflicting_args() {
+  local arg=""
+  for arg in "$@"; do
+    case "$arg" in
+      --remote-chrome | --remote-chrome=*)
+        fail "--remote-chrome is set by this wrapper (${remote_chrome}). Remove it."
+        ;;
+      --remote-host | --remote-host=* | --remote-token | --remote-token=*)
+        fail "Remote oracle-serve bridges are out of scope for this project. See ${docs_oracle}."
+        ;;
+      --browser-attach-running | --browser-chrome-path | --browser-chrome-path=* | \
+      --browser-cookie-path | --browser-cookie-path=* | --copy-profile | --copy-profile=* | \
+      --browser-manual-login | --browser-keep-browser | --browser-headless | --browser-hide-window)
+        fail "$arg targets a locally launched Chrome and does not apply to the container. See ${docs_oracle}."
+        ;;
+      --browser-inline-cookies | --browser-inline-cookies=* | \
+      --browser-inline-cookies-file | --browser-inline-cookies-file=*)
+        fail "This project does not import cookies from other browsers. Sign in inside the container instead: ./scripts/oracle login"
+        ;;
+    esac
+  done
+}
+
+build_oracle_args() {
+  oracle_args=(--engine browser --remote-chrome "$remote_chrome")
+
+  if [[ -n "${BH_ORACLE_MODEL:-}" ]]; then
+    oracle_args+=(--model "$BH_ORACLE_MODEL")
+  fi
+
+  if [[ -n "${BH_ORACLE_EXTRA_ARGS:-}" ]]; then
+    # Project-owned config; intentionally split into oracle args.
+    # shellcheck disable=SC2206
+    local -a extra=(${BH_ORACLE_EXTRA_ARGS})
+    reject_conflicting_args "${extra[@]}"
+    oracle_args+=("${extra[@]}")
+  fi
+}
+
+ensure_browser() {
+  [[ -x "$bh" ]] || fail "Missing executable $bh"
+  # Starts or reuses the project container and blocks until CDP answers.
+  "$bh" url >/dev/null
+}
+
+signed_in_probe() {
+  # Reports login state only. It never reads cookie values and never types
+  # credentials; a signed-out result is something the operator resolves.
+  local probe=""
+  probe="$(cat <<'PY'
+import json
+
+reuse_tab("https://chatgpt.com/")
+wait_for_load()
+state = js("""(() => {
+  const composer = document.querySelector('#prompt-textarea, form [contenteditable="true"]');
+  const login = Array.from(document.querySelectorAll('button, a'))
+    .some(el => /log ?in|sign ?up/i.test(el.textContent || ''));
+  return { url: location.href, composer: Boolean(composer), loginVisible: login };
+})()""")
+state["signedIn"] = bool(state.get("composer")) and not state.get("loginVisible")
+print(json.dumps(state))
+PY
+)"
+  "$bh" run -c "$probe"
+}
+
+case "$cmd" in
+  run)
+    reject_conflicting_args "$@"
+    require_cmd oracle
+    ensure_browser
+    build_oracle_args
+    exec oracle "${oracle_args[@]}" "$@"
+    ;;
+
+  plan)
+    # Preview the resolved run and Oracle's browser control plan without
+    # touching the ChatGPT session.
+    reject_conflicting_args "$@"
+    require_cmd oracle
+    ensure_browser
+    build_oracle_args
+    exec oracle "${oracle_args[@]}" --dry-run summary "$@"
+    ;;
+
+  login)
+    if [[ -z "${BH_VNC_PORT:-}" ]]; then
+      cat >&2 <<MSG
+One-time ChatGPT sign-in needs an interactive view of the container browser.
+Fix: set BH_VNC_PORT in .browser-harness.env (for example 15900), then run:
+  ./scripts/bh reload
+  ./scripts/oracle login
+See ${docs_oracle} (First-time sign-in).
+MSG
+      exit 1
+    fi
+    ensure_browser
+    "$bh" run -c 'reuse_tab("https://chatgpt.com/", close_others=True); wait_for_load(); print(page_info())'
+    cat <<MSG
+
+chatgpt.com is open in the project container browser.
+Connect with a VNC viewer and sign in yourself:
+
+  vnc://127.0.0.1:${BH_VNC_PORT}
+
+macOS: open that URL in Screen Sharing. The session persists in the project
+profile volume (${BH_PROFILE_VOLUME:-<BH_PROFILE_VOLUME>}), so this is a one-time step per profile.
+Do not paste credentials into agent prompts, and do not import cookies from
+your real browser. When done: ./scripts/oracle check
+MSG
+    ;;
+
+  check)
+    ensure_browser
+    signed_in_probe
+    ;;
+
+  status)
+    echo "remote_chrome=$remote_chrome"
+    echo "model=${BH_ORACLE_MODEL:-<oracle default>}"
+    echo "extra_args=${BH_ORACLE_EXTRA_ARGS:-<none>}"
+    if [[ -n "${BH_VNC_PORT:-}" ]]; then
+      echo "vnc_url=vnc://127.0.0.1:${BH_VNC_PORT}"
+    else
+      echo "vnc_url=<disabled>"
+    fi
+    if command -v oracle >/dev/null 2>&1; then
+      echo "oracle_installed=yes"
+      echo "oracle_version=$(oracle --version 2>/dev/null || echo unknown)"
+    else
+      echo "oracle_installed=no"
+    fi
+    if [[ -f "$project_root/.oracle/config.json" ]]; then
+      echo "project_config=.oracle/config.json"
+    else
+      echo "project_config=<missing>"
+    fi
+    ;;
+
+  *)
+    usage
+    exit 2
+    ;;
+esac

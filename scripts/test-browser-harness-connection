@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: ./scripts/test-browser-harness-connection [options]
+
+Focused smoke test for the project-isolated Patchright/Chrome image and
+browser-harness wrapper.
+
+Options:
+  --image-mode auto|build|pull|skip   Default: auto. auto builds from the local
+                                      Dockerfile when present, otherwise pulls
+                                      BH_IMAGE.
+  --reuse-container                   Do not force ./scripts/bh reload before
+                                      testing. By default the named container is
+                                      recreated so a rebuilt image is exercised.
+  --no-stop                           Leave the browser container running after
+                                      the test for debugging.
+  -h, --help                          Show this help.
+
+Environment overrides:
+  BH_TEST_IMAGE_MODE                  Same as --image-mode.
+  BH_TEST_REUSE_CONTAINER=1           Same as --reuse-container.
+  BH_TEST_NO_STOP=1                   Same as --no-stop.
+
+Prerequisite: copy .browser-harness.env.example to .browser-harness.env and keep
+that local file uncommitted.
+USAGE
+}
+
+log_step() {
+  printf '\n==> %s\n' "$*"
+}
+
+run_cmd() {
+  printf '+ '
+  printf '%q ' "$@"
+  printf '\n'
+  "$@"
+}
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Required command not found: $1" >&2
+    exit 127
+  fi
+}
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$repo_root"
+
+image_mode="${BH_TEST_IMAGE_MODE:-auto}"
+reuse_container="${BH_TEST_REUSE_CONTAINER:-0}"
+stop_after="1"
+if [[ "${BH_TEST_NO_STOP:-0}" == "1" ]]; then
+  stop_after="0"
+fi
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --image-mode)
+      image_mode="${2:-}"
+      if [[ -z "$image_mode" ]]; then
+        echo "--image-mode requires auto, build, pull, or skip" >&2
+        exit 2
+      fi
+      shift 2
+      ;;
+    --image-mode=*)
+      image_mode="${1#*=}"
+      shift
+      ;;
+    --reuse-container)
+      reuse_container="1"
+      shift
+      ;;
+    --no-stop)
+      stop_after="0"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+case "$image_mode" in
+  auto|build|pull|skip) ;;
+  *)
+    echo "Invalid image mode: $image_mode (expected auto, build, pull, or skip)" >&2
+    exit 2
+    ;;
+esac
+
+config_file="$repo_root/.browser-harness.env"
+example_file="$repo_root/.browser-harness.env.example"
+if [[ ! -f "$config_file" ]]; then
+  cat >&2 <<MSG
+Missing $config_file.
+Create a local ignored config first, for example:
+  cp .browser-harness.env.example .browser-harness.env
+Then edit unique values such as BH_HOST_PORT if needed.
+MSG
+  exit 2
+fi
+
+# shellcheck disable=SC1090
+set -a
+source "$config_file"
+set +a
+
+: "${BH_IMAGE:?BH_IMAGE is required in .browser-harness.env}"
+: "${BH_CONTAINER_NAME:?BH_CONTAINER_NAME is required in .browser-harness.env}"
+: "${BH_HOST_PORT:?BH_HOST_PORT is required in .browser-harness.env}"
+
+image_context="$repo_root/docker/browser-harness-patchright"
+
+cleanup() {
+  local status=$?
+  if [[ "$stop_after" == "1" ]]; then
+    log_step "Stopping browser-harness test container (profile volume is preserved)"
+    ./scripts/bh stop || true
+  else
+    log_step "Leaving container running for debugging (--no-stop): ${BH_CONTAINER_NAME}"
+  fi
+
+  if [[ $status -eq 0 ]]; then
+    printf '\nPASS: browser image CDP endpoint and browser-harness wrapper connection verified.\n'
+  else
+    printf '\nFAIL: browser image/browser-harness smoke test failed with exit code %s.\n' "$status" >&2
+    printf 'Hint: inspect logs with ./scripts/bh logs\n' >&2
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
+
+require_cmd docker
+require_cmd curl
+require_cmd python3
+
+log_step "Focused HTTPS localhost configuration checks"
+run_cmd ./scripts/test-https-localhost-integration
+
+log_step "Project browser-harness settings"
+run_cmd ./scripts/bh status
+
+log_step "Preparing image: ${BH_IMAGE} (mode: ${image_mode})"
+platform_args=()
+if [[ -n "${BH_DOCKER_PLATFORM:-}" ]]; then
+  platform_args=(--platform "$BH_DOCKER_PLATFORM")
+fi
+
+if [[ "$image_mode" == "auto" ]]; then
+  if [[ -f "$image_context/Dockerfile" ]]; then
+    image_mode="build"
+  else
+    image_mode="pull"
+  fi
+fi
+
+case "$image_mode" in
+  build)
+    if [[ ! -f "$image_context/Dockerfile" ]]; then
+      echo "Dockerfile not found: $image_context/Dockerfile" >&2
+      exit 1
+    fi
+    run_cmd docker build "${platform_args[@]}" -t "$BH_IMAGE" "$image_context"
+    ;;
+  pull)
+    run_cmd docker pull "$BH_IMAGE"
+    ;;
+  skip)
+    echo "Skipping image build/pull; scripts/bh will build the image if it is missing."
+    ;;
+esac
+
+if [[ "$reuse_container" == "1" ]]; then
+  log_step "Starting/reusing browser container via scripts/bh"
+  cdp_url="$(./scripts/bh url)"
+else
+  log_step "Recreating browser container via scripts/bh reload so the prepared image is used"
+  run_cmd ./scripts/bh reload
+  cdp_url="$(./scripts/bh url)"
+fi
+printf 'CDP URL: %s\n' "$cdp_url"
+
+log_step "Verifying CDP /json/version"
+version_json="$(curl -fsS "${cdp_url%/}/json/version")"
+printf '%s\n' "$version_json" | python3 -m json.tool
+printf '%s' "$version_json" | python3 -c 'import json,sys; data=json.load(sys.stdin); ws=data.get("webSocketDebuggerUrl"); assert ws, "missing webSocketDebuggerUrl"; print("webSocketDebuggerUrl OK:", ws)'
+
+log_step "Verifying browser-harness wrapper can connect and reuse one work tab for https://example.com"
+bh_program="$(cat <<'PY'
+import os
+
+print("BU_NAME=", os.environ.get("BU_NAME"))
+print("BU_CDP_URL=", os.environ.get("BU_CDP_URL"))
+print("initial_page_info=", page_info())
+reuse_tab("https://example.com", close_others=True)
+wait_for_load()
+print("example_page_info=", page_info())
+PY
+)"
+BH_FORCE_RELOAD=1 ./scripts/bh run -c "$bh_program"

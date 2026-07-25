@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+python3 - <<'PY'
+from __future__ import annotations
+
+import importlib.util
+import sys
+import types
+from pathlib import Path
+
+root = Path.cwd()
+launcher_paths = [
+    root / "docker/browser-harness-patchright/launch_patchright_cdp.py",
+    root / "templates/docker/browser-harness-patchright/launch_patchright_cdp.py",
+]
+
+patchright = types.ModuleType("patchright")
+sync_api = types.ModuleType("patchright.sync_api")
+sync_api.sync_playwright = object()
+patchright.sync_api = sync_api
+sys.modules.setdefault("patchright", patchright)
+sys.modules.setdefault("patchright.sync_api", sync_api)
+
+
+def load_launcher(path: Path, index: int):
+    spec = importlib.util.spec_from_file_location(f"bh_launcher_{index}", path)
+    if spec is None or spec.loader is None:
+        raise AssertionError(f"could not load {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def expect_value_error(callable_obj, description: str) -> None:
+    try:
+        callable_obj()
+    except ValueError:
+        return
+    raise AssertionError(f"expected ValueError: {description}")
+
+
+for index, path in enumerate(launcher_paths):
+    launcher = load_launcher(path, index)
+
+    args = launcher.build_launch_args(
+        "--lang=en-US --ignore-certificate-errors-spki-list=test-only-placeholder",
+        "MAP localhost host.docker.internal",
+    )
+    resolver_args = [arg for arg in args if arg.startswith("--host-resolver-rules=")]
+    assert resolver_args == [
+        "--host-resolver-rules=MAP localhost host.docker.internal"
+    ], path
+    assert "--lang=en-US" in args, path
+    assert "--ignore-certificate-errors-spki-list=test-only-placeholder" in args, path
+
+    args_without_resolver = launcher.build_launch_args("--lang=en-US", "")
+    assert not any(
+        arg.startswith("--host-resolver-rules") for arg in args_without_resolver
+    ), path
+
+    comma_separated = launcher.build_launch_args(
+        "", "MAP localhost host.docker.internal, EXCLUDE example.test"
+    )
+    assert comma_separated.count(
+        "--host-resolver-rules=MAP localhost host.docker.internal, EXCLUDE example.test"
+    ) == 1, path
+
+    for malformed in (
+        "MAP localhost",
+        "UNKNOWN localhost host.docker.internal",
+        "--host-resolver-rules=MAP localhost host.docker.internal",
+        "MAP localhost host.docker.internal\nEXCLUDE localhost",
+        "MAP localhost host.docker.internal,",
+    ):
+        expect_value_error(
+            lambda malformed=malformed: launcher.build_launch_args("", malformed),
+            f"malformed resolver rule {malformed!r}",
+        )
+
+    for forbidden in (
+        "--remote-debugging-port=9222",
+        "--remote-debugging-address=0.0.0.0",
+        "--user-data-dir=/tmp/profile",
+        "--host-resolver-rules='MAP localhost host.docker.internal'",
+        "--ignore-certificate-errors",
+        "--ignore-certificate-errors=true",
+    ):
+        expect_value_error(
+            lambda forbidden=forbidden: launcher.build_launch_args(forbidden, ""),
+            f"forbidden PATCHRIGHT_EXTRA_ARGS value {forbidden!r}",
+        )
+
+    expect_value_error(
+        lambda: launcher.build_launch_args(
+            "--host-resolver-rules='MAP localhost host.docker.internal'",
+            "MAP localhost host.docker.internal",
+        ),
+        "duplicate dedicated and PATCHRIGHT_EXTRA_ARGS resolver configuration",
+    )
+    expect_value_error(
+        lambda: launcher.build_launch_args("--lang='en-US", ""),
+        "malformed PATCHRIGHT_EXTRA_ARGS quoting",
+    )
+
+primary_launcher, template_launcher = launcher_paths
+assert primary_launcher.read_bytes() == template_launcher.read_bytes(), (
+    "primary/template launcher drift detected"
+)
+assert (root / "scripts/bh").read_bytes() == (root / "templates/scripts/bh").read_bytes(), (
+    "primary/template wrapper drift detected"
+)
+
+for compose_path in (
+    root / "docker-compose.browser-harness.yml",
+    root / "templates/docker-compose.browser-harness.yml",
+):
+    compose = compose_path.read_text()
+    assert '"127.0.0.1:${BH_HOST_PORT:-19322}:9222"' in compose, compose_path
+    assert '"host.docker.internal:host-gateway"' in compose, compose_path
+    assert "BH_HOST_RESOLVER_RULES: ${BH_HOST_RESOLVER_RULES:-}" in compose, compose_path
+    assert "network_mode: host" not in compose, compose_path
+
+wrapper = (root / "scripts/bh").read_text()
+assert '-e BH_HOST_RESOLVER_RULES="${BH_HOST_RESOLVER_RULES:-}"' in wrapper
+assert "${BH_HOST_RESOLVER_RULES:-}|${BH_BROWSER_ORIGIN:-}" in wrapper
+assert 'echo "browser_origin=$BH_BROWSER_ORIGIN"' in wrapper
+assert "without credentials, path, query, or fragment" in wrapper
+
+for env_path in (
+    root / ".browser-harness.env.example",
+    root / "templates/.browser-harness.env.template",
+):
+    env_example = env_path.read_text()
+    assert "BH_BROWSER_ORIGIN=https://localhost:3443" in env_example, env_path
+    assert "BH_HOST_RESOLVER_RULES='MAP localhost host.docker.internal'" in env_example, env_path
+    assert "--ignore-certificate-errors-spki-list=" not in env_example, env_path
+
+print("PASS: HTTPS localhost configuration contract and mirror checks")
+PY
