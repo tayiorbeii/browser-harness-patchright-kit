@@ -4,6 +4,8 @@ set -Eeuo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
+python3 scripts/check_repository_integrity.py --mirrors
+
 python3 - <<'PY'
 from __future__ import annotations
 
@@ -106,14 +108,6 @@ for index, path in enumerate(launcher_paths):
         "malformed PATCHRIGHT_EXTRA_ARGS quoting",
     )
 
-primary_launcher, template_launcher = launcher_paths
-assert primary_launcher.read_bytes() == template_launcher.read_bytes(), (
-    "primary/template launcher drift detected"
-)
-assert (root / "scripts/bh").read_bytes() == (root / "templates/scripts/bh").read_bytes(), (
-    "primary/template wrapper drift detected"
-)
-
 for compose_path in (
     root / "docker-compose.browser-harness.yml",
     root / "templates/docker-compose.browser-harness.yml",
@@ -139,5 +133,5 @@ for env_path in (
     assert "BH_HOST_RESOLVER_RULES='MAP localhost host.docker.internal'" in env_example, env_path
     assert "--ignore-certificate-errors-spki-list=" not in env_example, env_path
 
-print("PASS: HTTPS localhost configuration contract and mirror checks")
+print("PASS: HTTPS localhost configuration contract")
 PY

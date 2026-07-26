@@ -74,6 +74,12 @@ The included `templates/seccomp_userns_allow.fragment.json` is only the extra al
 
 This setup avoids taking over the user's normal browser, but it does not guarantee privacy from the sites visited by the container browser. Sites can still observe normal browser/network properties, IP address, logged-in state, and automation-related behavior.
 
+## Repository artifact invariant
+
+`.gitignore` is advisory. The tracked pre-commit hook delegates to `scripts/check_repository_integrity.py`, which scans the complete staged Git index with NUL-delimited path handling. It rejects prompt-chain names/directories (case-insensitive across common separator and extension variants), `.pi/`, `.pi-subagents/`, `.browser-harness/`, `commit.json`, `report.md`, unsanitized environment files, `secrets/` content, private-key/certificate suffixes (including `.ppk`), common SSH private-key names (`id_rsa`, `id_ed25519`, `id_ecdsa`, and `id_dsa` families, while allowing their `.pub` public keys), and `.local`/`.secret`/`.secrets` material. Sanitized `*.example` and `*.template` environment files remain allowed.
+
+Because the checker examines the resulting index rather than only the current diff, `git add -f` and previously tracked forbidden files do not bypass it. A staged deletion removes the path from the index and is allowed. Run `./scripts/test-repository-integrity` to exercise the hook in an isolated temporary Git repository without changing the real index.
+
 ## Operational recommendation
 
 Add these to `.gitignore`:

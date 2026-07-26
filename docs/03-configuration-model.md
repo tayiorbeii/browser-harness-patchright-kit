@@ -116,4 +116,20 @@ PATCHRIGHT_EXTRA_ARGS='--proxy-server=http://host.docker.internal:8080'
 # Stronger Linux sandboxing path when you wire a complete seccomp profile.
 BH_DOCKER_EXTRA_ARGS='--ipc=host --security-opt seccomp=/absolute/path/to/seccomp_profile.json'
 CHROMIUM_SANDBOX=1
+
+# Loopback-only VNC view of the container display for one-time interactive work
+# (sign-in, captcha). Requires headed Chrome. Leave unset when not in use.
+BH_VNC_PORT=15900
+
+# Informational browser origin shown by ./scripts/bh status. Never navigates Chrome.
+BH_BROWSER_ORIGIN=https://localhost:3443
+
+# Dedicated Chromium host resolver rules, passed as one browser argument.
+BH_HOST_RESOLVER_RULES='MAP localhost host.docker.internal'
+
+# Oracle consult model and extra flags for ./scripts/oracle.
+BH_ORACLE_MODEL=gpt-5.5-pro
+BH_ORACLE_EXTRA_ARGS=--heartbeat 30
 ```
+
+See `docs/08-https-localhost-integration.md` for resolver and origin contract details, and `docs/09-oracle-integration.md` for Oracle setup.

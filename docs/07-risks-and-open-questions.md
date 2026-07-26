@@ -63,15 +63,9 @@ Mitigation:
 - Do not mount or copy the user's real Chrome profile.
 - Avoid committing `.browser-harness.env`.
 
-## Open question: noVNC/debug viewing
+## Resolved: VNC/debug viewing
 
-The first implementation does not include a browser viewer. Add noVNC later if the user wants to watch the isolated browser visually.
-
-Potential approaches:
-
-- Add a VNC/noVNC service in docker-compose.
-- Use Playwright's desktop-lite devcontainer approach as a reference.
-- Expose only on localhost.
+x11vnc is installed in the image and started when `BH_VNC_ENABLED=1`. The host port is published on loopback only via `BH_VNC_PORT`. See README.md for interactive access instructions. A browser-based noVNC viewer remains a future option for operators who prefer a web UI over a native VNC client.
 
 ## Open question: shared image management
 

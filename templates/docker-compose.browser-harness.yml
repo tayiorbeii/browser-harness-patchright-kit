@@ -1,37 +1,73 @@
-# Optional docker-compose reference.
-# The scripts/bh wrapper is the recommended path because it handles per-project
-# env, daemon reload, and browser-harness invocation. Use this compose file for
-# manual debugging or if your project already standardizes on compose.
+# OPTIONAL launch path; ./scripts/bh is the primary entrypoint. Do not run both concurrently against the same container/port.
+#
+# Usage from the project root:
+#   docker compose --env-file .browser-harness.env -f docker-compose.browser-harness.yml up
+#
+# Docker Compose does not automatically read .browser-harness.env for host-side
+# interpolation unless it is passed with --env-file (or exported in your shell).
+# The service env_file below also passes those values into the container.
 
 services:
   browser-harness-patchright:
-    build:
-      context: ./docker/browser-harness-patchright
-      args:
-        PATCHRIGHT_VERSION: "1.61.1"
     image: ${BH_IMAGE:-browser-harness-patchright:1.61.1}
     container_name: ${BH_CONTAINER_NAME:-bh-my-app}
+    # OPTIONAL: add `platform: linux/amd64` in a local override only when a project needs an amd64 Chrome-channel image.
     init: true
+
+    # Docker Desktop-friendly default. On native Linux, a local override may use
+    # `ipc: host` instead for Chromium shared-memory behavior; keep this compose
+    # file conservative and portable by default.
     shm_size: "2gb"
+
+    # CDP is sensitive: bind the host side to loopback only, never 0.0.0.0.
+    # The optional VNC port follows the same rule; uncomment it (and set
+    # BH_VNC_ENABLED=1 below) only for one-time interactive sign-in work.
     ports:
       - "127.0.0.1:${BH_HOST_PORT:-19322}:9222"
+      # - "127.0.0.1:${BH_VNC_PORT:-15900}:5900"
+
+    # Lets the browser in Docker reach host dev servers as host.docker.internal.
+    # Docker Desktop provides this automatically; native Linux needs host-gateway.
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+    env_file:
+      - path: ./.browser-harness.env
+        required: false
+
     environment:
       CDP_HOST: 0.0.0.0
-      CDP_PORT: 9222
+      CDP_PORT: "9222"
       PATCHRIGHT_HEADLESS: ${PATCHRIGHT_HEADLESS:-0}
       PATCHRIGHT_EXTRA_ARGS: ${PATCHRIGHT_EXTRA_ARGS:-}
       BH_HOST_RESOLVER_RULES: ${BH_HOST_RESOLVER_RULES:-}
+      PATCHRIGHT_BROWSER_EXECUTABLE: ${PATCHRIGHT_BROWSER_EXECUTABLE:-/usr/bin/chromium}
+      PATCHRIGHT_BROWSER_CHANNEL: ${PATCHRIGHT_BROWSER_CHANNEL:-}
       CHROMIUM_SANDBOX: ${CHROMIUM_SANDBOX:-0}
+      # Starts x11vnc on the Xvfb display. Requires the port mapping above and
+      # headed Chrome (PATCHRIGHT_HEADLESS=0).
+      BH_VNC_ENABLED: ${BH_VNC_ENABLED:-0}
+
     volumes:
-      - bh_profile:/data/profile
-      - ./.browser-harness/downloads:/data/downloads
-      - ./:/workspace:rw
-    working_dir: /workspace
+      # Keep mounts narrow: project root only, mounted read/write at the same
+      # absolute path. Run from the project root or export BH_PROJECT_ROOT.
+      - type: bind
+        source: ${BH_PROJECT_ROOT:-${PWD}}
+        target: ${BH_PROJECT_ROOT:-${PWD}}
+      # Host-visible browser downloads. Defaults match .browser-harness.env.
+      - type: bind
+        source: ${BH_DOWNLOADS_DIR:-.browser-harness/downloads}
+        target: /data/downloads
+      # Persistent project Chrome profile; never mount the user's real browser profile.
+      - type: volume
+        source: browser_harness_profile
+        target: /data/profile
+
+    working_dir: ${BH_PROJECT_ROOT:-${PWD}}
     labels:
       browser-harness.project: ${BH_PROJECT_SLUG:-my-app}
+      browser-harness.project-root: ${BH_PROJECT_ROOT:-${PWD}}
 
 volumes:
-  bh_profile:
+  browser_harness_profile:
     name: ${BH_PROFILE_VOLUME:-bh-my-app-profile}

@@ -50,6 +50,12 @@ This design means browser-harness may still send CDP commands that Patchright it
 
 It does **not** guarantee the full stealth properties Patchright aims for when Patchright alone drives the page.
 
+## Kit source ownership
+
+Root-level operational files are canonical within this kit. Their `templates/` counterparts are distributable starter snapshots copied into target repositories, not generated sources. `scripts/check_repository_integrity.py` holds the single declarative mirror map: seven pairs must match byte-for-byte, and every side must have its declared regular-file mode (`100644` or `100755`), while the environment pair allows only four complete identity-assignment substitutions (`BH_PROJECT_SLUG`, `BH_CONTAINER_NAME`, `BH_BU_NAME`, and `BH_PROFILE_VOLUME`). The checker reports drift but never rewrites either side.
+
+The pre-commit hook reads mirror content and modes from Git's staged index, so partially staging one side cannot commit drift. It also requires the staged hook, checker, and acceptance test to byte-match the worktree copies with mode `100755`, preventing a commit from installing a hook whose checker or proof suite was omitted. Docker-free acceptance checks use the same map against the working tree.
+
 ## Components
 
 ### Docker image

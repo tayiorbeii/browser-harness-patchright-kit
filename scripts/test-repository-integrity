@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""Acceptance tests for mirror and staged-index repository invariants."""
+
+from __future__ import annotations
+
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SCRIPTS_DIR = REPO_ROOT / "scripts"
+sys.path.insert(0, str(SCRIPTS_DIR))
+
+import check_repository_integrity as policy  # noqa: E402
+
+
+def run(*args: str, cwd: Path, expect: int = 0) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        args,
+        cwd=cwd,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != expect:
+        raise AssertionError(
+            f"expected exit {expect}, got {result.returncode}: {' '.join(args)}\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+    return result
+
+
+def copy_fixture(destination: Path) -> None:
+    for canonical, template, _substitutions, _expected_mode in policy.MIRROR_RULES:
+        for relative in (canonical, template):
+            target = destination / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(REPO_ROOT / relative, target)
+
+    for relative in (*policy.REQUIRED_INFRASTRUCTURE, ".gitignore"):
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(REPO_ROOT / relative, target)
+
+
+def write(root: Path, relative: str, content: str = "test fixture\n") -> Path:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def assert_hook(root: Path, should_pass: bool, expected_path: str = "") -> None:
+    result = run(
+        str(root / ".githooks/pre-commit"),
+        cwd=root,
+        expect=0 if should_pass else 1,
+    )
+    if expected_path and expected_path not in result.stderr:
+        raise AssertionError(
+            f"hook rejection did not identify {expected_path!r}:\n{result.stderr}"
+        )
+
+
+def test_mirror_rules(fixture: Path) -> None:
+    errors = policy.check_mirrors(fixture)
+    if errors:
+        raise AssertionError("valid mirror fixture failed: " + "; ".join(errors))
+
+    env_template = fixture / "templates/.browser-harness.env.template"
+    original_env = env_template.read_text(encoding="utf-8")
+    env_template.write_text(
+        original_env.replace("BH_PROJECT_SLUG=my-app", "BH_PROJECT_SLUG=drifted", 1),
+        encoding="utf-8",
+    )
+    if not policy.check_mirrors(fixture):
+        raise AssertionError("environment normalization drift was not rejected")
+    env_template.write_text(original_env, encoding="utf-8")
+
+    wrapper_template = fixture / "templates/scripts/bh"
+    original_wrapper = wrapper_template.read_bytes()
+    wrapper_template.write_bytes(original_wrapper + b"# drift\n")
+    if not policy.check_mirrors(fixture):
+        raise AssertionError("exact mirror drift was not rejected")
+    wrapper_template.write_bytes(original_wrapper)
+
+    canonical_wrapper = fixture / "scripts/bh"
+    original_canonical_mode = canonical_wrapper.stat().st_mode
+    original_template_mode = wrapper_template.stat().st_mode
+    canonical_wrapper.chmod(0o644)
+    wrapper_template.chmod(0o644)
+    if not policy.check_mirrors(fixture):
+        raise AssertionError("bilateral mirror mode drift was not rejected")
+    canonical_wrapper.chmod(original_canonical_mode)
+    wrapper_template.chmod(original_template_mode)
+
+
+def test_git_index_policy(fixture: Path) -> None:
+    run("git", "init", "-q", cwd=fixture)
+    run("git", "config", "user.name", "Integrity Test", cwd=fixture)
+    run("git", "config", "user.email", "integrity@example.invalid", cwd=fixture)
+    run("git", "add", "-f", ".", cwd=fixture)
+    run("git", "commit", "-q", "--no-verify", "-m", "fixture", cwd=fixture)
+    run("git", "config", "core.hooksPath", ".githooks", cwd=fixture)
+    assert_hook(fixture, should_pass=True)
+
+    for required_path in policy.REQUIRED_INFRASTRUCTURE:
+        run("git", "rm", "-q", "--cached", "--", required_path, cwd=fixture)
+        assert_hook(fixture, should_pass=False, expected_path=required_path)
+        run("git", "reset", "--hard", "-q", "HEAD", cwd=fixture)
+
+    checker = fixture / "scripts/check_repository_integrity.py"
+    checker.write_bytes(checker.read_bytes() + b"# unstaged checker drift\n")
+    assert_hook(fixture, should_pass=False, expected_path=str(checker.relative_to(fixture)))
+    run("git", "reset", "--hard", "-q", "HEAD", cwd=fixture)
+
+    allowed = (
+        ".env.example",
+        "config.env.template",
+        "allowed/.browser-harness.env.example",
+        "templates/nested/.browser-harness.env.template",
+        "safe directory/readme.md",
+        "safe directory/line\nbreak.md",
+        "identity/id_rsa.pub",
+        "identity/id_ed25519.pub",
+    )
+    for path in allowed:
+        write(fixture, path)
+    run("git", "add", "--", *allowed, cwd=fixture)
+    assert_hook(fixture, should_pass=True)
+    run("git", "reset", "--hard", "-q", "HEAD", cwd=fixture)
+    run("git", "clean", "-fdx", "-q", cwd=fixture)
+
+    canonical_wrapper = fixture / "scripts/bh"
+    template_wrapper = fixture / "templates/scripts/bh"
+    canonical_wrapper.write_bytes(canonical_wrapper.read_bytes() + b"# staged drift\n")
+    run("git", "add", "--", "scripts/bh", cwd=fixture)
+    assert_hook(fixture, should_pass=False)
+    template_wrapper.write_bytes(template_wrapper.read_bytes() + b"# staged drift\n")
+    run("git", "add", "--", "templates/scripts/bh", cwd=fixture)
+    assert_hook(fixture, should_pass=True)
+    run("git", "reset", "--hard", "-q", "HEAD", cwd=fixture)
+
+    canonical_wrapper.chmod(0o644)
+    template_wrapper.chmod(0o644)
+    run("git", "add", "--", "scripts/bh", "templates/scripts/bh", cwd=fixture)
+    assert_hook(fixture, should_pass=False)
+    run("git", "reset", "--hard", "-q", "HEAD", cwd=fixture)
+
+    forbidden = (
+        ".pi/session.json",
+        ".pi-subagents/run.log",
+        ".browser-harness/state.json",
+        "commit.json",
+        "nested/report.md",
+        "review.prompt-chain.yaml",
+        "Prompt_Chain/session.txt",
+        "artifacts/prompt.chain/output.txt",
+        ".browser-harness.env",
+        "nested/.env.production",
+        "secrets/token.txt",
+        "nested/private.pem",
+        "id_rsa_test",
+        "identity/id_ecdsa",
+        "identity/id_dsa_backup",
+        "space directory/private.key",
+        "windows/private.ppk",
+        "notes.secret",
+    )
+    for path in forbidden:
+        write(fixture, path)
+        run("git", "add", "-f", "--", path, cwd=fixture)
+        assert_hook(fixture, should_pass=False, expected_path=path)
+        run("git", "reset", "--hard", "-q", "HEAD", cwd=fixture)
+        run("git", "clean", "-fdx", "-q", cwd=fixture)
+
+    deleted_path = "legacy/prompt-chain-state.json"
+    write(fixture, deleted_path)
+    run("git", "add", "-f", "--", deleted_path, cwd=fixture)
+    run(
+        "git",
+        "commit",
+        "-q",
+        "--no-verify",
+        "-m",
+        "legacy forbidden fixture",
+        cwd=fixture,
+    )
+    (fixture / deleted_path).unlink()
+    run("git", "add", "-u", "--", deleted_path, cwd=fixture)
+    assert_hook(fixture, should_pass=True)
+
+
+def main() -> int:
+    source_errors = policy.check_mirrors(REPO_ROOT)
+    if source_errors:
+        raise AssertionError("repository mirrors are invalid: " + "; ".join(source_errors))
+
+    with tempfile.TemporaryDirectory(prefix="bh-repository-integrity-") as temp_dir:
+        fixture = Path(temp_dir)
+        copy_fixture(fixture)
+        test_mirror_rules(fixture)
+        test_git_index_policy(fixture)
+
+    print("PASS: repository mirror and staged-index acceptance tests")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

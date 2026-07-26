@@ -39,6 +39,7 @@ prompts/
 
 templates/
   .browser-harness.env.template
+  .gitignore.additions
   .oracle/config.json
   docker-compose.browser-harness.yml
   docker/browser-harness-patchright/Dockerfile
@@ -48,6 +49,23 @@ templates/
   skills/browser-harness/SKILL.md
   seccomp_userns_allow.fragment.json
 ```
+
+## Repository maintenance invariants
+
+The operational files at the repository root are the canonical kit implementation. Files under `templates/` are explicit starter snapshots for copying into target repositories; they are not generated and are never silently overwritten. `scripts/check_repository_integrity.py` declares every live/template pair and checks both content and its required regular-file mode (`100644` or `100755`). Seven pairs are exact. The environment pair permits only these full-line identity substitutions:
+
+- `BH_PROJECT_SLUG=browser_harness_patchright_project_kit` → `BH_PROJECT_SLUG=my-app`
+- `BH_CONTAINER_NAME=bh-browser_harness_patchright_project_kit` → `BH_CONTAINER_NAME=bh-my-app`
+- `BH_BU_NAME=browser_harness_patchright_project_kit` → `BH_BU_NAME=my-app`
+- `BH_PROFILE_VOLUME=bh-browser_harness_patchright_project_kit-profile` → `BH_PROFILE_VOLUME=bh-my-app-profile`
+
+Run the Docker-free integrity acceptance suite with:
+
+```bash
+./scripts/test-repository-integrity
+```
+
+The pre-commit hook runs the same checker against staged mirror blobs/modes and every path in Git's staged index. It also requires the staged hook, checker, and acceptance-test bytes/modes to match the worktree copies being run. This catches partial infrastructure or mirror staging, force-added ignored files, and forbidden artifacts already present in the index; staged deletions are naturally absent and remain allowed. Enable the tracked hook with `git config core.hooksPath .githooks`.
 
 ## Requirements
 

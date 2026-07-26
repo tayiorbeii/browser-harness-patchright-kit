@@ -1,33 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Prevent accidental commits of real environment/secret files.
-# Sanitized examples/templates are allowed.
-blocked=0
-while IFS= read -r path; do
-  base="${path##*/}"
-  case "$base" in
-    .env|.env.*|*.env|*.env.*|.browser-harness.env|.browser-harness.env.*)
-      case "$base" in
-        *.example|*.template|.env.example|.browser-harness.env.example)
-          ;;
-        *)
-          echo "Refusing to commit environment file: $path" >&2
-          blocked=1
-          ;;
-      esac
-      ;;
-  esac
-
-  case "$path" in
-    secrets/*|*/secrets/*|*.pem|*.key|*.p12|*.pfx|id_rsa*|*/id_rsa*|id_ed25519*|*/id_ed25519*)
-      echo "Refusing to commit likely secret material: $path" >&2
-      blocked=1
-      ;;
-  esac
-done < <(git diff --cached --name-only --diff-filter=ACMR)
-
-if [[ "$blocked" -ne 0 ]]; then
-  echo "Commit blocked. Move secrets/env files out of git or add a sanitized *.example/*.template file instead." >&2
-  exit 1
-fi
+repo_root="$(git rev-parse --show-toplevel)"
+exec python3 "$repo_root/scripts/check_repository_integrity.py" --mirrors --cached-mirrors --index

@@ -43,8 +43,17 @@ secrets/
 *.key
 *.p12
 *.pfx
+*.ppk
 id_rsa*
 id_ed25519*
+id_ecdsa*
+id_dsa*
+
+# Public SSH keys and sanitized environment examples/templates are trackable.
+!id_rsa*.pub
+!id_ed25519*.pub
+!id_ecdsa*.pub
+!id_dsa*.pub
 
 # Keep sanitized examples/templates trackable
 !.env.example
@@ -66,3 +75,7 @@ id_ed25519*
 # project context. Keep them out of the repo.
 commit.json
 report.md
+*prompt-chain*
+*prompt_chain*
+*prompt.chain*
+*promptchain*

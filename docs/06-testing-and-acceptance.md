@@ -15,6 +15,24 @@ The project is ready when all of these pass:
 - Two projects can run at the same time without port, daemon, or profile collision.
 - A host dev server is reachable as `http://host.docker.internal:<port>` from container Chrome.
 
+## Repository-static acceptance
+
+Before Docker or browser smoke tests, run:
+
+```bash
+python3 scripts/check_repository_integrity.py --mirrors
+./scripts/test-repository-integrity
+./scripts/test-https-localhost-integration
+```
+
+The declarative checker verifies all live/template content and required regular-file modes (`100644` or `100755`). Seven pairs are exact; `.browser-harness.env.example` is normalized to its starter template using only the four declared project-identity assignment substitutions. The acceptance script also proves exact and normalized drift failures, unilateral and bilateral content/mode drift rejection, omitted or unstaged integrity-infrastructure rejection, allowed examples/templates and SSH public keys, force-added forbidden paths, paths containing spaces or newlines, and staged deletion behavior. Hook scenarios run in a temporary Git repository and do not touch this checkout's index.
+
+The tracked `.githooks/pre-commit` invokes the same policy against staged mirror blobs/modes and the complete staged path index. Install it locally with:
+
+```bash
+git config core.hooksPath .githooks
+```
+
 ## Smoke tests
 
 ### Focused image-to-browser-harness connection test
