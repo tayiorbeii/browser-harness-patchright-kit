@@ -1,6 +1,6 @@
 # Manifest
 
-This manifest enumerates the 40 intended repository files after the integrity-checker work. Runtime state, personal configuration, prompt-chain artifacts, transcripts, reports, caches, and generated outputs are intentionally excluded. The pre-commit invariant requires both new integrity scripts and the hook itself to be present in the staged index with their declared bytes and modes.
+This manifest enumerates the 41 intended repository files after the integrity-checker work. Runtime state, personal configuration, prompt-chain artifacts, transcripts, reports, caches, and generated outputs are intentionally excluded. The pre-commit invariant requires both new integrity scripts and the hook itself to be present in the staged index with their declared bytes and modes.
 
 ## Repository support (4)
 
@@ -26,7 +26,7 @@ This manifest enumerates the 40 intended repository files after the integrity-ch
 - `prompts/implementation-prompt.md`
 - `prompts/implementation-checklist.md`
 
-## Operational implementation and validation (14)
+## Operational implementation and validation (15)
 
 - `.browser-harness.env.example`
 - `.browser-harness.oracle.env.example`
@@ -42,6 +42,7 @@ This manifest enumerates the 40 intended repository files after the integrity-ch
 - `scripts/test-browser-harness-connection`
 - `scripts/test-https-localhost-integration`
 - `scripts/test-repository-integrity`
+- `scripts/test-oracle-readiness`
 
 ## Starter templates (11)
 

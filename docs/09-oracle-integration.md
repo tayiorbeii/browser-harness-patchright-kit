@@ -48,12 +48,14 @@ BH_VNC_PORT=15900
 
 ```bash
 ./scripts/oracle status                        # wrapper, container target, oracle readiness
-./scripts/oracle check                         # is the container profile signed in to ChatGPT?
+./scripts/oracle check                         # is ChatGPT operational, not merely cookie-authenticated?
 ./scripts/oracle plan -p "Review this design"  # dry run; prints Oracle's browser control plan
 ./scripts/oracle run -p "Review this design" --file "docs/**/*.md"
 ```
 
 `run` and `plan` boot or reuse the container (via `./scripts/bh url`), then exec `oracle` with `--engine browser --remote-chrome 127.0.0.1:${BH_HOST_PORT}` plus anything from `BH_ORACLE_MODEL` / `BH_ORACLE_EXTRA_ARGS`.
+
+`check` polls for up to 30 seconds, then exits non-zero unless the session has both an authenticated `/api/auth/session` response and a usable prompt composer with no visible account-chooser dialog. Its JSON distinguishes `signedIn` (session-cookie presence) from `ready` (operational UI). `run` performs the same preflight and refuses to launch Oracle when `ready` is false; a transient login link alone remains diagnostic.
 
 The wrapper rejects flags that would break the isolation boundary:
 
@@ -75,7 +77,7 @@ The container runs headed Chrome under Xvfb with no visible window, so the sign-
 3. `./scripts/bh reload`
 4. `./scripts/oracle login` — opens chatgpt.com in the container and prints the VNC URL.
 5. Connect to `vnc://127.0.0.1:15900` (macOS: Screen Sharing) and **sign in yourself**.
-6. `./scripts/oracle check` — expect `"signedIn": true`.
+6. `./scripts/oracle check` — expect `"signedIn": true`, `"ready": true`, and exit code 0.
 7. Unset `BH_VNC_PORT` and `./scripts/bh reload` when finished.
 
 Rules that do not bend:
