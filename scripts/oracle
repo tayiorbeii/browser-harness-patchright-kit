@@ -115,7 +115,7 @@ wait_for_load()
 deadline = time.monotonic() + 30
 state = {}
 while time.monotonic() < deadline:
-  state = js("""(async () => {
+  state = js(r"""(async () => {
     const visible = el => Boolean(el && el.getClientRects().length && getComputedStyle(el).visibility !== "hidden");
     const composer = document.querySelector('#prompt-textarea, form [contenteditable="true"]');
     const login = Array.from(document.querySelectorAll('button, a'))

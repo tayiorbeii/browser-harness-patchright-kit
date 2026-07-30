@@ -6,6 +6,49 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/scripts" "$tmp/bin"
 
+awk '
+  capture && /^PY$/ { exit }
+  capture { print }
+  /probe="[$][(]cat <<'\''PY'\''/ { capture = 1 }
+' "$repo_root/scripts/oracle" >"$tmp/oracle-probe.py"
+[[ -s "$tmp/oracle-probe.py" ]] && grep -q 'reuse_tab(' "$tmp/oracle-probe.py" || {
+  echo "FAIL: could not extract Oracle probe heredoc" >&2
+  exit 1
+}
+python3 -W error -c 'import pathlib, sys; source = pathlib.Path(sys.argv[1]).read_text(); compile(source, sys.argv[1], "exec")' "$tmp/oracle-probe.py"
+python3 - "$tmp/oracle-probe.py" <<'PY'
+import contextlib
+import io
+import json
+import pathlib
+import sys
+import types
+
+source = pathlib.Path(sys.argv[1]).read_text()
+cases = (
+    ({"hasUser": False, "composer": True, "authBlocker": False}, False),
+    ({"hasUser": True, "composer": False, "authBlocker": False}, False),
+    ({"hasUser": True, "composer": True, "authBlocker": True}, False),
+    ({"hasUser": True, "composer": True, "authBlocker": False}, True),
+)
+fake_time = types.ModuleType("time")
+sys.modules["time"] = fake_time
+for state, expected in cases:
+    ticks = iter((0, 0, 31))
+    fake_time.monotonic = lambda: next(ticks)
+    fake_time.sleep = lambda _: None
+    output = io.StringIO()
+    namespace = {
+        "reuse_tab": lambda _: None,
+        "wait_for_load": lambda: None,
+        "js": lambda _: dict(state),
+    }
+    with contextlib.redirect_stdout(output):
+        exec(compile(source, sys.argv[1], "exec"), namespace)
+    result = json.loads(output.getvalue())
+    assert result["ready"] is expected, (state, result)
+PY
+
 cat >"$tmp/.browser-harness.env" <<'EOF'
 BH_HOST_PORT=19323
 BH_ORACLE_MODEL=gpt-5.5-pro
