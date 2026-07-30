@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/scripts" "$tmp/bin"
+
+awk '
+  capture && /^PY$/ { exit }
+  capture { print }
+  /probe="[$][(]cat <<'\''PY'\''/ { capture = 1 }
+' "$repo_root/scripts/oracle" >"$tmp/oracle-probe.py"
+[[ -s "$tmp/oracle-probe.py" ]] && grep -q 'reuse_tab(' "$tmp/oracle-probe.py" || {
+  echo "FAIL: could not extract Oracle probe heredoc" >&2
+  exit 1
+}
+python3 -W error -c 'import pathlib, sys; source = pathlib.Path(sys.argv[1]).read_text(); compile(source, sys.argv[1], "exec")' "$tmp/oracle-probe.py"
+python3 - "$tmp/oracle-probe.py" <<'PY'
+import contextlib
+import io
+import json
+import pathlib
+import sys
+import types
+
+source = pathlib.Path(sys.argv[1]).read_text()
+cases = (
+    ({"hasUser": False, "composer": True, "loginVisible": False, "authBlocker": False}, False),
+    ({"hasUser": True, "composer": False, "loginVisible": False, "authBlocker": False}, False),
+    ({"hasUser": True, "composer": True, "loginVisible": False, "authBlocker": True}, False),
+    ({"hasUser": True, "composer": True, "loginVisible": True, "authBlocker": False}, False),
+    ({"hasUser": True, "composer": True, "loginVisible": False, "authBlocker": False}, True),
+)
+fake_time = types.ModuleType("time")
+sys.modules["time"] = fake_time
+for state, expected in cases:
+    ticks = iter((0, 0, 31))
+    fake_time.monotonic = lambda: next(ticks)
+    fake_time.sleep = lambda _: None
+    output = io.StringIO()
+    namespace = {
+        "reuse_tab": lambda _: None,
+        "wait_for_load": lambda: None,
+        "js": lambda _: dict(state),
+    }
+    with contextlib.redirect_stdout(output):
+        exec(compile(source, sys.argv[1], "exec"), namespace)
+    result = json.loads(output.getvalue())
+    assert result["ready"] is expected, (state, result)
+PY
+
+cat >"$tmp/.browser-harness.env" <<'EOF'
+BH_HOST_PORT=19323
+BH_ORACLE_MODEL=gpt-5.5-pro
+EOF
+
+cat >"$tmp/scripts/bh" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+case "${1:-}" in
+  url) ;;
+  run)
+    cat >/dev/null
+    printf '%s\n' "${BH_TEST_PROBE_JSON:?}"
+    ;;
+  *) exit 2 ;;
+esac
+EOF
+chmod +x "$tmp/scripts/bh"
+
+cat >"$tmp/bin/oracle" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${BH_TEST_ORACLE_LOG:?}"
+EOF
+chmod +x "$tmp/bin/oracle"
+
+run_wrapper() {
+  BH_PROJECT_ROOT="$tmp" \
+  BH_CONFIG_FILE="$tmp/.browser-harness.env" \
+  BH_TEST_ORACLE_LOG="$tmp/oracle.log" \
+  PATH="$tmp/bin:$PATH" \
+  "$repo_root/scripts/oracle" "$@"
+}
+
+not_ready='{"authStatus":200,"hasUser":true,"composer":false,"loginVisible":true,"authBlocker":true,"signedIn":true,"ready":false}'
+ready='{"authStatus":200,"hasUser":true,"composer":true,"loginVisible":false,"authBlocker":false,"signedIn":true,"ready":true}'
+
+BH_TEST_PROBE_JSON="$not_ready" run_wrapper check >/dev/null 2>&1 && {
+  echo "FAIL: check accepted a session cookie without operational ChatGPT UI" >&2
+  exit 1
+}
+
+BH_TEST_PROBE_JSON="$ready" run_wrapper check >/dev/null
+
+rm -f "$tmp/oracle.log"
+BH_TEST_PROBE_JSON="$not_ready" run_wrapper run -p test >/dev/null 2>&1 && {
+  echo "FAIL: run accepted a non-operational ChatGPT session" >&2
+  exit 1
+}
+[[ ! -e "$tmp/oracle.log" ]] || {
+  echo "FAIL: Oracle launched before readiness passed" >&2
+  exit 1
+}
+
+BH_TEST_PROBE_JSON="$ready" run_wrapper run -p test >/dev/null
+[[ -s "$tmp/oracle.log" ]] || {
+  echo "FAIL: Oracle did not launch after readiness passed" >&2
+  exit 1
+}
+
+echo "PASS: Oracle check and run require operational ChatGPT readiness."

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Dedicated Oracle lane: runs ./scripts/oracle against its own isolated
+# container/profile (.browser-harness.oracle.env) instead of the shared
+# lane's .browser-harness.env, so Oracle consults and other browser
+# automation (for example LinkedIn) never share a Chrome profile or tab.
+# See docs/09-oracle-integration.md (Tab lifecycle: Oracle vs. the harness).
+#
+# BH_PROJECT_ROOT and BH_CONFIG_FILE are set unconditionally below, not with
+# a ${VAR:-default} fallback, so this wrapper always targets the Oracle lane
+# and never inherits a caller's export pointed at the shared lane.
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PATH="$HOME/.local/bin:$PATH"
+export BH_PROJECT_ROOT="$root"
+export BH_CONFIG_FILE="$root/.browser-harness.oracle.env"
+exec "$root/scripts/oracle" "$@"

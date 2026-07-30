@@ -93,7 +93,7 @@ When browser work is done and the user asks to close it:
 
 ```bash
 ./scripts/oracle status                       # wrapper + container + oracle readiness
-./scripts/oracle check                        # is the container profile signed in to ChatGPT?
+./scripts/oracle check                        # is ChatGPT operational, not merely cookie-authenticated?
 ./scripts/oracle plan -p "Review this design" # dry run; prints the browser control plan
 ./scripts/oracle run -p "Review this design" --file "docs/**/*.md"
 ```
@@ -101,7 +101,7 @@ When browser work is done and the user asks to close it:
 Rules:
 
 - Never invoke plain `oracle` with the browser engine in this project, and never pass `--remote-chrome`, `--remote-host`, `--browser-attach-running`, `--browser-chrome-path`, `--browser-cookie-path`, `--copy-profile`, or `--browser-inline-cookies*`. The wrapper rejects them; they either fight the container target or read the user's real browser.
-- `oracle` in remote-chrome mode does not sync cookies. The container profile must already be signed in. If `./scripts/oracle check` reports `"signedIn": false`, stop and tell the user to run `./scripts/oracle login` and sign in themselves over VNC. **Do not type credentials, and do not import cookies from any other browser.**
+- `oracle` in remote-chrome mode does not sync cookies. The container profile must already be signed in and show a usable prompt composer. `./scripts/oracle check` must report `"ready": true` and exit 0; `"signedIn": true` alone proves only session-cookie presence. Otherwise stop and tell the user to run `./scripts/oracle login` and resolve sign-in or account-choice UI themselves over VNC. **Do not type credentials, and do not import cookies from any other browser.**
 - Oracle opens and closes its own tab in this container. While a consult is running, do not call `reuse_tab(..., close_others=True)` or `close_other_tabs(...)` — that kills Oracle's tab mid-run. Use `reuse_tab(url)` without `close_others` for harness work during a consult, or give Oracle a dedicated container (separate `BH_PROJECT_SLUG`, `BH_HOST_PORT`, and `BH_PROFILE_VOLUME`).
 - Browser consults on Pro models can run for many minutes. That is normal: use `oracle status` / `oracle session <id>` rather than starting a duplicate run.
 - API-mode consults (`oracle --engine api ...`) need no browser and may be run directly.

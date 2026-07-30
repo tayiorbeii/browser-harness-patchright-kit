@@ -19,7 +19,7 @@ if [[ $# -gt 0 ]]; then
 fi
 
 project_root="${BH_PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-config_file="$project_root/.browser-harness.env"
+config_file="${BH_CONFIG_FILE:-$project_root/.browser-harness.env}"
 bh="$project_root/scripts/bh"
 docs_oracle="docs/09-oracle-integration.md"
 
@@ -39,7 +39,7 @@ set +a
 remote_chrome="127.0.0.1:${BH_HOST_PORT}"
 
 usage() {
-  echo "Usage: $0 {run|plan|login|check|status} [oracle args]" >&2
+  echo "Usage: $0 {run|plan|login|check|status|stop} [oracle args]" >&2
 }
 
 fail() {
@@ -103,25 +103,60 @@ ensure_browser() {
 }
 
 signed_in_probe() {
-  # Reports login state only. It never reads cookie values and never types
-  # credentials; a signed-out result is something the operator resolves.
+  # Reports operational state only. It never reads cookie values or types
+  # credentials; a not-ready result is something the operator resolves.
   local probe=""
   probe="$(cat <<'PY'
 import json
+import time
 
 reuse_tab("https://chatgpt.com/")
 wait_for_load()
-state = js("""(() => {
-  const composer = document.querySelector('#prompt-textarea, form [contenteditable="true"]');
-  const login = Array.from(document.querySelectorAll('button, a'))
-    .some(el => /log ?in|sign ?up/i.test(el.textContent || ''));
-  return { url: location.href, composer: Boolean(composer), loginVisible: login };
-})()""")
-state["signedIn"] = bool(state.get("composer")) and not state.get("loginVisible")
+deadline = time.monotonic() + 30
+state = {}
+while time.monotonic() < deadline:
+  state = js(r"""(async () => {
+    const visible = el => Boolean(el && el.getClientRects().length && getComputedStyle(el).visibility !== "hidden");
+    const composer = document.querySelector('#prompt-textarea, form [contenteditable="true"]');
+    const login = Array.from(document.querySelectorAll('button, a'))
+      .some(el => visible(el) && /^(log ?in|sign ?up)(?:\s+(?:for free|to another account))?$/i.test((el.textContent || '').trim()));
+    const authBlocker = Array.from(document.querySelectorAll('[role="dialog"]'))
+      .some(el => visible(el) && /(welcome back|choose an account to continue)/i.test(el.textContent || ''));
+    let authStatus = null;
+    let hasUser = false;
+    try {
+      const response = await fetch('/api/auth/session', { credentials: 'include', cache: 'no-store' });
+      authStatus = response.status;
+      const session = await response.json();
+      hasUser = Boolean(session && session.user);
+    } catch {}
+    return {
+      url: location.href,
+      composer: visible(composer),
+      loginVisible: login,
+      authBlocker,
+      authStatus,
+      hasUser,
+    };
+  })()""")
+  state["signedIn"] = bool(state.get("hasUser"))
+  state["ready"] = (
+    state["signedIn"]
+    and bool(state.get("composer"))
+    and not bool(state.get("loginVisible"))
+    and not bool(state.get("authBlocker"))
+  )
+  if state["ready"]:
+    break
+  time.sleep(0.5)
 print(json.dumps(state))
 PY
 )"
-  "$bh" run -c "$probe"
+  printf '%s\n' "$probe" | "$bh" run
+}
+
+is_ready() {
+  grep -Eq '"ready"[[:space:]]*:[[:space:]]*true'
 }
 
 case "$cmd" in
@@ -129,6 +164,11 @@ case "$cmd" in
     reject_conflicting_args "$@"
     require_cmd oracle
     ensure_browser
+    state="$(signed_in_probe)"
+    if ! is_ready <<<"$state"; then
+      printf '%s\n' "$state" >&2
+      fail "ChatGPT session exists but is not operational. Run ./scripts/oracle login and complete any account chooser or login prompt."
+    fi
     build_oracle_args
     exec oracle "${oracle_args[@]}" "$@"
     ;;
@@ -155,7 +195,7 @@ MSG
       exit 1
     fi
     ensure_browser
-    "$bh" run -c 'reuse_tab("https://chatgpt.com/", close_others=True); wait_for_load(); print(page_info())'
+    printf '%s\n' 'reuse_tab("https://chatgpt.com/", close_others=True)' 'wait_for_load()' 'print(page_info())' | "$bh" run
     cat <<MSG
 
 chatgpt.com is open in the project container browser.
@@ -172,7 +212,9 @@ MSG
 
   check)
     ensure_browser
-    signed_in_probe
+    state="$(signed_in_probe)"
+    printf '%s\n' "$state"
+    is_ready <<<"$state"
     ;;
 
   status)
@@ -195,6 +237,20 @@ MSG
     else
       echo "project_config=<missing>"
     fi
+    # Readback of the container this wrapper's config resolves to (container=,
+    # running=, ...), so signed-in state and container lifecycle are visible
+    # from one command instead of a separate bh invocation.
+    if [[ -x "$bh" ]]; then
+      "$bh" status
+    fi
+    ;;
+
+  stop)
+    # Stops the container this wrapper's config resolves to. Delegates to bh
+    # so the oracle lane and the shared lane each stop only their own
+    # container; never starts anything.
+    [[ -x "$bh" ]] || fail "Missing executable $bh"
+    exec "$bh" stop
     ;;
 
   *)

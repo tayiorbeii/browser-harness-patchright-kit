@@ -7,7 +7,7 @@ if [[ $# -gt 0 ]]; then
 fi
 
 project_root="${BH_PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-config_file="$project_root/.browser-harness.env"
+config_file="${BH_CONFIG_FILE:-$project_root/.browser-harness.env}"
 
 docs_failure="docs/06-testing-and-acceptance.md#failure-modes-and-fixes"
 docs_cdp="docs/06-testing-and-acceptance.md#cdp-endpoint-not-ready"

@@ -239,7 +239,7 @@ Connect with any VNC client (macOS: open that URL in Screen Sharing). Requires h
 
 ```bash
 ./scripts/oracle status                        # wrapper, container target, oracle readiness
-./scripts/oracle check                         # is the container profile signed in to ChatGPT?
+./scripts/oracle check                         # is ChatGPT operational, not merely cookie-authenticated?
 ./scripts/oracle plan -p "Review this design"  # dry run; prints Oracle's browser control plan
 ./scripts/oracle run -p "Review this design" --file "docs/**/*.md"
 ```
