@@ -103,8 +103,8 @@ ensure_browser() {
 }
 
 signed_in_probe() {
-  # Reports login state only. It never reads cookie values and never types
-  # credentials; a signed-out result is something the operator resolves.
+  # Reports operational state only. It never reads cookie values or types
+  # credentials; a not-ready result is something the operator resolves.
   local probe=""
   probe="$(cat <<'PY'
 import json
@@ -119,7 +119,9 @@ while time.monotonic() < deadline:
     const visible = el => Boolean(el && el.getClientRects().length && getComputedStyle(el).visibility !== "hidden");
     const composer = document.querySelector('#prompt-textarea, form [contenteditable="true"]');
     const login = Array.from(document.querySelectorAll('button, a'))
-      .some(el => visible(el) && /^(log ?in|sign ?up(?: for free)?)$/i.test((el.textContent || '').trim()));
+      .some(el => visible(el) && /^(log ?in|sign ?up)(?:\s+(?:for free|to another account))?$/i.test((el.textContent || '').trim()));
+    const authBlocker = Array.from(document.querySelectorAll('[role="dialog"]'))
+      .some(el => visible(el) && /(welcome back|choose an account to continue)/i.test(el.textContent || ''));
     let authStatus = null;
     let hasUser = false;
     try {
@@ -128,14 +130,22 @@ while time.monotonic() < deadline:
       const session = await response.json();
       hasUser = Boolean(session && session.user);
     } catch {}
-    return { url: location.href, composer: visible(composer), loginVisible: login, authStatus, hasUser };
+    return {
+      url: location.href,
+      composer: visible(composer),
+      loginVisible: login,
+      authBlocker,
+      authStatus,
+      hasUser,
+    };
   })()""")
-  # /api/auth/session (hasUser) is authoritative: ChatGPT can render a
-  # login CTA or omit the composer transiently even for a signed-in
-  # session, so composer/loginVisible are diagnostic only and never gate
-  # this result.
   state["signedIn"] = bool(state.get("hasUser"))
-  if state["signedIn"]:
+  state["ready"] = (
+    state["signedIn"]
+    and bool(state.get("composer"))
+    and not bool(state.get("authBlocker"))
+  )
+  if state["ready"]:
     break
   time.sleep(0.5)
 print(json.dumps(state))
@@ -144,11 +154,20 @@ PY
   printf '%s\n' "$probe" | "$bh" run
 }
 
+is_ready() {
+  grep -Eq '"ready"[[:space:]]*:[[:space:]]*true'
+}
+
 case "$cmd" in
   run)
     reject_conflicting_args "$@"
     require_cmd oracle
     ensure_browser
+    state="$(signed_in_probe)"
+    if ! is_ready <<<"$state"; then
+      printf '%s\n' "$state" >&2
+      fail "ChatGPT session exists but is not operational. Run ./scripts/oracle login and complete any account chooser or login prompt."
+    fi
     build_oracle_args
     exec oracle "${oracle_args[@]}" "$@"
     ;;
@@ -192,7 +211,9 @@ MSG
 
   check)
     ensure_browser
-    signed_in_probe
+    state="$(signed_in_probe)"
+    printf '%s\n' "$state"
+    is_ready <<<"$state"
     ;;
 
   status)

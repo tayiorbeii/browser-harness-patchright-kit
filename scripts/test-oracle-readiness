@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/scripts" "$tmp/bin"
+
+cat >"$tmp/.browser-harness.env" <<'EOF'
+BH_HOST_PORT=19323
+BH_ORACLE_MODEL=gpt-5.5-pro
+EOF
+
+cat >"$tmp/scripts/bh" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+case "${1:-}" in
+  url) ;;
+  run)
+    cat >/dev/null
+    printf '%s\n' "${BH_TEST_PROBE_JSON:?}"
+    ;;
+  *) exit 2 ;;
+esac
+EOF
+chmod +x "$tmp/scripts/bh"
+
+cat >"$tmp/bin/oracle" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${BH_TEST_ORACLE_LOG:?}"
+EOF
+chmod +x "$tmp/bin/oracle"
+
+run_wrapper() {
+  BH_PROJECT_ROOT="$tmp" \
+  BH_CONFIG_FILE="$tmp/.browser-harness.env" \
+  BH_TEST_ORACLE_LOG="$tmp/oracle.log" \
+  PATH="$tmp/bin:$PATH" \
+  "$repo_root/scripts/oracle" "$@"
+}
+
+not_ready='{"authStatus":200,"hasUser":true,"composer":false,"loginVisible":true,"authBlocker":true,"signedIn":true,"ready":false}'
+ready='{"authStatus":200,"hasUser":true,"composer":true,"loginVisible":false,"authBlocker":false,"signedIn":true,"ready":true}'
+
+BH_TEST_PROBE_JSON="$not_ready" run_wrapper check >/dev/null 2>&1 && {
+  echo "FAIL: check accepted a session cookie without operational ChatGPT UI" >&2
+  exit 1
+}
+
+BH_TEST_PROBE_JSON="$ready" run_wrapper check >/dev/null
+
+rm -f "$tmp/oracle.log"
+BH_TEST_PROBE_JSON="$not_ready" run_wrapper run -p test >/dev/null 2>&1 && {
+  echo "FAIL: run accepted a non-operational ChatGPT session" >&2
+  exit 1
+}
+[[ ! -e "$tmp/oracle.log" ]] || {
+  echo "FAIL: Oracle launched before readiness passed" >&2
+  exit 1
+}
+
+BH_TEST_PROBE_JSON="$ready" run_wrapper run -p test >/dev/null
+[[ -s "$tmp/oracle.log" ]] || {
+  echo "FAIL: Oracle did not launch after readiness passed" >&2
+  exit 1
+}
+
+echo "PASS: Oracle check and run require operational ChatGPT readiness."
