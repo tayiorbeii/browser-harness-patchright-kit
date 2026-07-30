@@ -143,6 +143,7 @@ while time.monotonic() < deadline:
   state["ready"] = (
     state["signedIn"]
     and bool(state.get("composer"))
+    and not bool(state.get("loginVisible"))
     and not bool(state.get("authBlocker"))
   )
   if state["ready"]:

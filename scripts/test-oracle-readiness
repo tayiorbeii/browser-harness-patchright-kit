@@ -26,10 +26,11 @@ import types
 
 source = pathlib.Path(sys.argv[1]).read_text()
 cases = (
-    ({"hasUser": False, "composer": True, "authBlocker": False}, False),
-    ({"hasUser": True, "composer": False, "authBlocker": False}, False),
-    ({"hasUser": True, "composer": True, "authBlocker": True}, False),
-    ({"hasUser": True, "composer": True, "authBlocker": False}, True),
+    ({"hasUser": False, "composer": True, "loginVisible": False, "authBlocker": False}, False),
+    ({"hasUser": True, "composer": False, "loginVisible": False, "authBlocker": False}, False),
+    ({"hasUser": True, "composer": True, "loginVisible": False, "authBlocker": True}, False),
+    ({"hasUser": True, "composer": True, "loginVisible": True, "authBlocker": False}, False),
+    ({"hasUser": True, "composer": True, "loginVisible": False, "authBlocker": False}, True),
 )
 fake_time = types.ModuleType("time")
 sys.modules["time"] = fake_time
