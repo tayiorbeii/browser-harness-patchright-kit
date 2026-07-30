@@ -55,7 +55,7 @@ BH_VNC_PORT=15900
 
 `run` and `plan` boot or reuse the container (via `./scripts/bh url`), then exec `oracle` with `--engine browser --remote-chrome 127.0.0.1:${BH_HOST_PORT}` plus anything from `BH_ORACLE_MODEL` / `BH_ORACLE_EXTRA_ARGS`.
 
-`check` polls for up to 30 seconds, then exits non-zero unless the session has both an authenticated `/api/auth/session` response and a usable prompt composer with no visible account-chooser dialog. Its JSON distinguishes `signedIn` (session-cookie presence) from `ready` (operational UI). `run` performs the same preflight and refuses to launch Oracle when `ready` is false; a transient login link alone remains diagnostic.
+`check` polls for up to 30 seconds, then exits non-zero unless the session has an authenticated `/api/auth/session` response, a usable prompt composer, no visible account-chooser dialog, and no persistent login CTA. Its JSON distinguishes `signedIn` (session-cookie presence) from `ready` (operational UI). `run` performs the same preflight and refuses to launch Oracle when `ready` is false.
 
 The wrapper rejects flags that would break the isolation boundary:
 
