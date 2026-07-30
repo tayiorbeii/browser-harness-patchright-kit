@@ -1,6 +1,6 @@
 # Manifest
 
-This manifest enumerates the 37 intended repository files after the integrity-checker work. Runtime state, personal configuration, prompt-chain artifacts, transcripts, reports, caches, and generated outputs are intentionally excluded. The pre-commit invariant requires both new integrity scripts and the hook itself to be present in the staged index with their declared bytes and modes.
+This manifest enumerates the 40 intended repository files after the integrity-checker work. Runtime state, personal configuration, prompt-chain artifacts, transcripts, reports, caches, and generated outputs are intentionally excluded. The pre-commit invariant requires both new integrity scripts and the hook itself to be present in the staged index with their declared bytes and modes.
 
 ## Repository support (4)
 
@@ -26,9 +26,10 @@ This manifest enumerates the 37 intended repository files after the integrity-ch
 - `prompts/implementation-prompt.md`
 - `prompts/implementation-checklist.md`
 
-## Operational implementation and validation (12)
+## Operational implementation and validation (14)
 
 - `.browser-harness.env.example`
+- `.browser-harness.oracle.env.example`
 - `.codex/skills/browser-harness/SKILL.md`
 - `.oracle/config.json`
 - `docker-compose.browser-harness.yml`
@@ -37,11 +38,12 @@ This manifest enumerates the 37 intended repository files after the integrity-ch
 - `scripts/bh`
 - `scripts/check_repository_integrity.py`
 - `scripts/oracle`
+- `scripts/oracle-lane`
 - `scripts/test-browser-harness-connection`
 - `scripts/test-https-localhost-integration`
 - `scripts/test-repository-integrity`
 
-## Starter templates (10)
+## Starter templates (11)
 
 - `templates/.browser-harness.env.template`
 - `templates/.gitignore.additions`
@@ -51,6 +53,7 @@ This manifest enumerates the 37 intended repository files after the integrity-ch
 - `templates/docker/browser-harness-patchright/launch_patchright_cdp.py`
 - `templates/scripts/bh`
 - `templates/scripts/oracle`
+- `templates/scripts/oracle-lane`
 - `templates/seccomp_userns_allow.fragment.json`
 - `templates/skills/browser-harness/SKILL.md`
 
@@ -64,6 +67,7 @@ docker/browser-harness-patchright/Dockerfile
 docker/browser-harness-patchright/launch_patchright_cdp.py
 scripts/bh
 scripts/oracle
+scripts/oracle-lane
 scripts/test-browser-harness-connection
 .oracle/config.json
 .codex/skills/browser-harness/SKILL.md
