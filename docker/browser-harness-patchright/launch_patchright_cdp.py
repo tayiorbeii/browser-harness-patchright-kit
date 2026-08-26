@@ -132,21 +132,29 @@ def start_vnc(headless: bool) -> subprocess.Popen[bytes] | None:
     display = os.environ.get("DISPLAY", ":99")
     port = int(os.environ.get("BH_VNC_CONTAINER_PORT", "5900"))
 
+    vnc_args = [
+        "x11vnc",
+        "-display",
+        display,
+        "-rfbport",
+        str(port),
+        "-listen",
+        "0.0.0.0",
+        "-forever",
+        "-shared",
+    ]
+    password_file = os.environ.get("BH_VNC_PASSWORD_FILE")
+    if password_file:
+        password_path = Path(password_file)
+        if not password_path.is_file() or not os.access(password_path, os.R_OK):
+            raise RuntimeError("BH_VNC_PASSWORD_FILE is not a readable regular file")
+        vnc_args.extend(["-rfbauth", str(password_path)])
+    else:
+        vnc_args.append("-nopw")
+    vnc_args.extend(["-noxdamage", "-quiet"])
+
     proc = subprocess.Popen(
-        [
-            "x11vnc",
-            "-display",
-            display,
-            "-rfbport",
-            str(port),
-            "-listen",
-            "0.0.0.0",
-            "-forever",
-            "-shared",
-            "-nopw",
-            "-noxdamage",
-            "-quiet",
-        ],
+        vnc_args,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )

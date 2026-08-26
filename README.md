@@ -223,6 +223,9 @@ Chrome runs headed on a virtual display with no window on your desktop. For one-
 
 ```bash
 # in .browser-harness.env
+PATCHRIGHT_HEADLESS=0
+XVFB_SCREEN=1440x900x24
+PATCHRIGHT_EXTRA_ARGS=--window-size=1400,840
 BH_VNC_PORT=15900
 ```
 
@@ -231,7 +234,7 @@ BH_VNC_PORT=15900
 ./scripts/bh status | grep vnc     # vnc://127.0.0.1:15900
 ```
 
-Connect with any VNC client (macOS: open that URL in Screen Sharing). Requires headed Chrome; the wrapper refuses `BH_VNC_PORT` when `PATCHRIGHT_HEADLESS` is not `0`. The image must include `x11vnc` — rebuild if yours predates it. **Unset it when finished**: the endpoint is unauthenticated, on the same trust boundary as CDP.
+Connect with any VNC client (macOS: open that URL in Screen Sharing). Requires headed Chrome; the wrapper refuses `BH_VNC_PORT` when `PATCHRIGHT_HEADLESS` is not `0`. The image must include `x11vnc` — rebuild if yours predates it. For clients that require password authentication, set `BH_VNC_PASSWORD_FILE` to an absolute host path containing an x11vnc `-storepasswd` file; the wrapper mounts it read-only and advertises VNCAuth. **Unset `BH_VNC_PORT` when finished**.
 
 ## Oracle consults
 
