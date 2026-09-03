@@ -120,8 +120,8 @@ CHROMIUM_SANDBOX=1
 # Loopback-only VNC view of the container display for one-time interactive work
 # (sign-in, captcha). Requires headed Chrome. Leave unset when not in use.
 BH_VNC_PORT=15900
-# Optional x11vnc -storepasswd file for clients that require VNCAuth.
-BH_VNC_PASSWORD_FILE=/absolute/path/to/x11vnc-password-file
+# Optional tigervncpasswd file for clients that require VNCAuth.
+BH_VNC_PASSWORD_FILE=/absolute/path/to/tigervnc-password-file
 
 # Informational browser origin shown by ./scripts/bh status. Never navigates Chrome.
 BH_BROWSER_ORIGIN=https://localhost:3443

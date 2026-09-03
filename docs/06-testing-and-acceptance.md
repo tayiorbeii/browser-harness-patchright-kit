@@ -107,6 +107,15 @@ docker ps --filter label=browser-harness.project
 
 There should be two containers with different names and ports.
 
+### 6. macOS Screen Sharing clipboard
+
+Set `PATCHRIGHT_HEADLESS=0` and `BH_VNC_PORT`, rebuild the `-vnc-clipboard` image, then reload the harness. In macOS Screen Sharing, choose **Edit → Use Shared Clipboard** and verify both directions with distinct sentinel text:
+
+1. Mac **Command-C** → remote Linux Chromium **Control-V**.
+2. Remote Linux Chromium **Control-C** → Mac **Command-V**.
+
+Acceptance requires both directions to preserve the complete text. The VNC URL must remain bound to `127.0.0.1`; do not weaken loopback publishing to make the test pass.
+
 ## Failure modes and fixes
 
 ### CDP endpoint not ready

@@ -100,69 +100,74 @@ def build_launch_args(extra_args_raw: str, host_resolver_rules_raw: str) -> list
     return launch_args
 
 
-def start_xvfb(headless: bool) -> subprocess.Popen[bytes] | None:
+def start_display_server(headless: bool) -> subprocess.Popen[bytes] | None:
+    """Start Xvfb normally, or TigerVNC's X server for interactive access.
+
+    TigerVNC owns the X display when VNC is enabled so its native clipboard
+    implementation can exchange modern X11 clipboard targets with VNC clients.
+    The host side must still publish the VNC port on loopback only.
+    """
+
     if headless:
         return None
 
     display = os.environ.get("DISPLAY", ":99")
     screen = os.environ.get("XVFB_SCREEN", "1920x1080x24")
+    vnc_enabled = env_bool("BH_VNC_ENABLED", False)
+
+    if not vnc_enabled:
+        display_args = ["Xvfb", display, "-screen", "0", screen, "-nolisten", "tcp"]
+    else:
+        try:
+            width, height, depth = (int(part) for part in screen.split("x"))
+        except (TypeError, ValueError):
+            raise RuntimeError("XVFB_SCREEN must use WIDTHxHEIGHTxDEPTH format") from None
+        if width <= 0 or height <= 0 or depth not in {16, 24, 32}:
+            raise RuntimeError("XVFB_SCREEN must use positive dimensions and depth 16, 24, or 32")
+
+        port = int(os.environ.get("BH_VNC_CONTAINER_PORT", "5900"))
+        display_args = [
+            "Xtigervnc",
+            display,
+            "-geometry",
+            f"{width}x{height}",
+            "-depth",
+            str(depth),
+            "-rfbport",
+            str(port),
+            "-interface",
+            "0.0.0.0",
+            "-AlwaysShared",
+            "-AcceptCutText=1",
+            "-SendCutText=1",
+            "-SendPrimary=0",
+            "-SetPrimary=0",
+            "-UseIPv6=0",
+        ]
+        password_file = os.environ.get("BH_VNC_PASSWORD_FILE")
+        if password_file:
+            password_path = Path(password_file)
+            if not password_path.is_file() or not os.access(password_path, os.R_OK):
+                raise RuntimeError("BH_VNC_PASSWORD_FILE is not a readable regular file")
+            display_args.extend(["-SecurityTypes", "VncAuth", "-PasswordFile", str(password_path)])
+        else:
+            display_args.extend(["-SecurityTypes", "None"])
 
     proc = subprocess.Popen(
-        ["Xvfb", display, "-screen", "0", screen, "-nolisten", "tcp"],
+        display_args,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
 
     time.sleep(0.5)
-    return proc
+    if proc.poll() is not None:
+        raise RuntimeError(f"display server exited during startup: {display_args[0]}")
 
-
-def start_vnc(headless: bool) -> subprocess.Popen[bytes] | None:
-    """Optionally expose the Xvfb display so an operator can drive Chrome by hand.
-
-    This exists for one-time interactive tasks the harness must not do for the
-    operator, such as signing in to a service inside the isolated project
-    profile. It is opt-in, it never starts in headless mode, and the host side
-    must publish the port on loopback only.
-    """
-
-    if headless or not env_bool("BH_VNC_ENABLED", False):
-        return None
-
-    display = os.environ.get("DISPLAY", ":99")
-    port = int(os.environ.get("BH_VNC_CONTAINER_PORT", "5900"))
-
-    vnc_args = [
-        "x11vnc",
-        "-display",
-        display,
-        "-rfbport",
-        str(port),
-        "-listen",
-        "0.0.0.0",
-        "-forever",
-        "-shared",
-    ]
-    password_file = os.environ.get("BH_VNC_PASSWORD_FILE")
-    if password_file:
-        password_path = Path(password_file)
-        if not password_path.is_file() or not os.access(password_path, os.R_OK):
-            raise RuntimeError("BH_VNC_PASSWORD_FILE is not a readable regular file")
-        vnc_args.extend(["-rfbauth", str(password_path)])
-    else:
-        vnc_args.append("-nopw")
-    vnc_args.extend(["-noxdamage", "-quiet"])
-
-    proc = subprocess.Popen(
-        vnc_args,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-    print(
-        json.dumps({"status": "vnc", "display": display, "port": port}),
-        flush=True,
-    )
+    if vnc_enabled:
+        print(
+            json.dumps({"status": "vnc", "server": "tigervnc", "display": display, "port": port}),
+            flush=True,
+        )
     return proc
 
 
@@ -250,8 +255,7 @@ def main() -> int:
         except FileNotFoundError:
             pass
 
-    xvfb = start_xvfb(headless)
-    vnc = start_vnc(headless)
+    display_server = start_display_server(headless)
     context = None
 
     def shutdown(*_: object) -> None:
@@ -259,10 +263,8 @@ def main() -> int:
             if context is not None:
                 context.close()
         finally:
-            if vnc is not None:
-                vnc.terminate()
-            if xvfb is not None:
-                xvfb.terminate()
+            if display_server is not None:
+                display_server.terminate()
             sys.exit(0)
 
     signal.signal(signal.SIGTERM, shutdown)

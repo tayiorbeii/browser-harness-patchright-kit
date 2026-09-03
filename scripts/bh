@@ -121,7 +121,7 @@ runtime_dir="${BH_RUNTIME_DIR:-${TMPDIR:-/tmp}/bh-${project_hash}/runtime}"
 tmp_dir="${BH_TMP_DIR:-${TMPDIR:-/tmp}/bh-${project_hash}/tmp}"
 downloads_dir="$project_root/${BH_DOWNLOADS_DIR:-.browser-harness/downloads}"
 image_context="$project_root/docker/browser-harness-patchright"
-config_sig="${BH_IMAGE}|${BH_DOCKER_PLATFORM}|${BH_HOST_PORT}|${BH_PROFILE_VOLUME}|${downloads_dir}|${BH_DOCKER_EXTRA_ARGS:-}|${PATCHRIGHT_HEADLESS:-0}|${PATCHRIGHT_EXTRA_ARGS:-}|${PATCHRIGHT_BROWSER_EXECUTABLE:-/usr/bin/chromium}|${PATCHRIGHT_BROWSER_CHANNEL:-}|${CHROMIUM_SANDBOX:-0}|${BH_HOST_RESOLVER_RULES:-}|${BH_BROWSER_ORIGIN:-}|${BH_VNC_PORT:-}|${XVFB_SCREEN}"
+config_sig="${BH_IMAGE}|${BH_DOCKER_PLATFORM}|${BH_HOST_PORT}|${BH_PROFILE_VOLUME}|${downloads_dir}|${BH_DOCKER_EXTRA_ARGS:-}|${PATCHRIGHT_HEADLESS:-0}|${PATCHRIGHT_EXTRA_ARGS:-}|${PATCHRIGHT_BROWSER_EXECUTABLE:-/usr/bin/chromium}|${PATCHRIGHT_BROWSER_CHANNEL:-}|${CHROMIUM_SANDBOX:-0}|${BH_HOST_RESOLVER_RULES:-}|${BH_BROWSER_ORIGIN:-}|${BH_VNC_PORT:-}|${BH_VNC_PASSWORD_FILE:-}|${XVFB_SCREEN}"
 
 # This project wrapper is intentionally local-only: no browser-harness cloud
 # browsers, no real-browser cookie/profile import, and no public CDP binding.
@@ -364,13 +364,35 @@ create_container() {
   local -a vnc_args=()
   local -a vnc_env_args=()
   local -a vnc_mount_args=()
+  local vnc_secret_volume="${BH_CONTAINER_NAME}-vnc-password"
   if [[ -n "${BH_VNC_PORT:-}" ]]; then
     # Loopback-only, exactly like CDP. Never publish this on 0.0.0.0.
     vnc_args=(-p "127.0.0.1:${BH_VNC_PORT}:5900")
     if [[ -n "${BH_VNC_PASSWORD_FILE:-}" ]]; then
-      vnc_env_args=(-e "BH_VNC_PASSWORD_FILE=/run/secrets/bh-vnc-password")
-      vnc_mount_args=(-v "${BH_VNC_PASSWORD_FILE}:/run/secrets/bh-vnc-password:ro")
+      # Docker Desktop preserves restrictive host modes on bind mounts, but the
+      # image runs as pwuser. Stage the encrypted password in a private Docker
+      # volume so normal tigervncpasswd mode 0600 files remain usable without
+      # making the host credential world-readable.
+      docker volume create "$vnc_secret_volume" >/dev/null \
+        || fail "Could not create the VNC password volume: ${vnc_secret_volume}"
+      if ! docker run --rm \
+        "${platform_args[@]}" \
+        --user root \
+        --entrypoint sh \
+        -v "${BH_VNC_PASSWORD_FILE}:/source-password:ro" \
+        -v "${vnc_secret_volume}:/staged-password" \
+        "$BH_IMAGE" \
+        -c 'install -m 0400 -o pwuser -g pwuser /source-password /staged-password/password'; then
+        docker volume rm "$vnc_secret_volume" >/dev/null 2>&1 || true
+        fail "Could not stage BH_VNC_PASSWORD_FILE for the container user."
+      fi
+      vnc_env_args=(-e "BH_VNC_PASSWORD_FILE=/run/secrets/bh-vnc-password/password")
+      vnc_mount_args=(-v "${vnc_secret_volume}:/run/secrets/bh-vnc-password:ro")
+    else
+      docker volume rm "$vnc_secret_volume" >/dev/null 2>&1 || true
     fi
+  else
+    docker volume rm "$vnc_secret_volume" >/dev/null 2>&1 || true
   fi
 
   local output=""

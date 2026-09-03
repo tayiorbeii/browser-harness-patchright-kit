@@ -12,11 +12,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
     curl \
     fonts-liberation \
-    x11vnc \
+    tigervnc-standalone-server \
+    tigervnc-tools \
     xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 RUN python -m pip install --no-cache-dir "patchright==${PATCHRIGHT_VERSION}"
+
+# Mapping browser localhost traffic to Docker's host gateway is intentional for
+# testing host dev servers. Suppress Chromium's generic dangerous-flag banner
+# with its supported machine policy instead of test-only browser switches.
+RUN install -d -m 0755 /etc/chromium/policies/managed \
+    && printf '%s\n' '{"CommandLineFlagSecurityWarningsEnabled":false}' \
+        > /etc/chromium/policies/managed/browser-harness.json \
+    && chmod 0644 /etc/chromium/policies/managed/browser-harness.json
 
 RUN useradd --create-home --shell /bin/bash pwuser \
     && mkdir -p /app /data/profile /data/downloads \
@@ -37,7 +46,7 @@ ENV DISPLAY=:99 \
     PATCHRIGHT_BROWSER_EXECUTABLE=/usr/bin/chromium \
     CHROMIUM_SANDBOX=0
 
-EXPOSE 9222
+EXPOSE 9222 5900
 
 # Playwright/Patchright containers should be run with Docker's init process
 # (`docker run --init` or Compose `init: true`) so Chrome/Xvfb children are
@@ -47,10 +56,11 @@ EXPOSE 9222
 # loopback-only (for example 127.0.0.1:9222:9222) and is intentionally not
 # decided by this image.
 #
-# x11vnc is installed but never started unless BH_VNC_ENABLED=1. It exists for
-# one-time interactive work inside the isolated profile (for example signing in
-# to a service the harness must not sign in to on the operator's behalf). Like
-# CDP, its host publishing must stay loopback-only.
+# Headed runs use Xvfb unless BH_VNC_ENABLED=1, when Xtigervnc becomes the X
+# server so clipboard exchange uses TigerVNC's native modern-X11 support. VNC
+# exists only for one-time interactive work inside the isolated profile (for
+# example signing in to a service the harness must not sign in to). Like CDP,
+# its host publishing must stay loopback-only.
 #
 # Docker Desktop vs native Linux notes:
 # - Prefer `--shm-size=1g` (or larger) for headed Chrome stability. Avoid
