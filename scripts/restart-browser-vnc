@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+project_root="$(cd "${script_dir}/.." && pwd)"
+bh="${project_root}/scripts/bh"
+
+fail() {
+  echo "restart-browser-vnc: $*" >&2
+  exit 1
+}
+
+[[ -x "$bh" ]] || fail "missing executable: ${bh}"
+command -v docker >/dev/null 2>&1 || fail "docker is required"
+command -v python3 >/dev/null 2>&1 || fail "python3 is required"
+
+echo "Restarting the browser-harness container and VNC server..."
+"$bh" reload
+
+status="$($bh status)"
+status_value() {
+  local key="$1"
+  awk -F= -v key="$key" '$1 == key {sub(/^[^=]*=/, ""); print; exit}' <<<"$status"
+}
+
+running="$(status_value running)"
+container="$(status_value container)"
+cdp_url="$(status_value cdp_url)"
+vnc_url="$(status_value vnc_url)"
+
+[[ "$running" == "yes" ]] || fail "container did not reach running state"
+[[ -n "$container" ]] || fail "container name is missing from ./scripts/bh status"
+[[ -n "$vnc_url" ]] || fail "VNC is disabled; set BH_VNC_PORT and PATCHRIGHT_HEADLESS=0"
+
+docker exec "$container" sh -lc 'ps -ef | grep -q "[X]tigervnc"' \
+  || fail "container is running, but Xtigervnc is not"
+
+host_port="${vnc_url#vnc://}"
+vnc_host="${host_port%:*}"
+vnc_port="${host_port##*:}"
+
+python3 - "$cdp_url" "$vnc_host" "$vnc_port" <<'PY'
+import json
+import socket
+import sys
+import urllib.request
+
+cdp_url, vnc_host, vnc_port_raw = sys.argv[1:]
+vnc_port = int(vnc_port_raw)
+
+with urllib.request.urlopen(f"{cdp_url}/json/version", timeout=5) as response:
+    version = json.load(response)
+if not version.get("webSocketDebuggerUrl"):
+    raise SystemExit("CDP response is missing webSocketDebuggerUrl")
+
+with socket.create_connection((vnc_host, vnc_port), timeout=5) as connection:
+    banner = connection.makefile("rb").read(12)
+if not banner.startswith(b"RFB "):
+    raise SystemExit(f"unexpected VNC banner: {banner!r}")
+
+print(f"CDP ready: {cdp_url}")
+print(f"TigerVNC ready: {banner.decode(errors='replace').strip()}")
+PY
+
+printf 'TigerVNC Viewer address: %s::%s\n' "$vnc_host" "$vnc_port"
+echo "Close any existing black viewer window, then reconnect so it requests the new framebuffer."

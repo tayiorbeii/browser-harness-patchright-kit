@@ -9,7 +9,7 @@
 
 services:
   browser-harness-patchright:
-    image: ${BH_IMAGE:-browser-harness-patchright:1.61.1}
+    image: ${BH_IMAGE:-browser-harness-patchright:1.61.1-vnc-clipboard}
     container_name: ${BH_CONTAINER_NAME:-bh-my-app}
     # OPTIONAL: add `platform: linux/amd64` in a local override only when a project needs an amd64 Chrome-channel image.
     init: true
@@ -44,8 +44,8 @@ services:
       PATCHRIGHT_BROWSER_EXECUTABLE: ${PATCHRIGHT_BROWSER_EXECUTABLE:-/usr/bin/chromium}
       PATCHRIGHT_BROWSER_CHANNEL: ${PATCHRIGHT_BROWSER_CHANNEL:-}
       CHROMIUM_SANDBOX: ${CHROMIUM_SANDBOX:-0}
-      # Starts x11vnc on the Xvfb display. Requires the port mapping above and
-      # headed Chrome (PATCHRIGHT_HEADLESS=0).
+      # Uses TigerVNC as the X server with bidirectional clipboard support.
+      # Requires the port mapping above and headed Chrome (PATCHRIGHT_HEADLESS=0).
       BH_VNC_ENABLED: ${BH_VNC_ENABLED:-0}
 
     volumes:

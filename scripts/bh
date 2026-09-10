@@ -30,6 +30,12 @@ set +a
 : "${BH_HOST_PORT:?BH_HOST_PORT is required}"
 : "${BH_BU_NAME:?BH_BU_NAME is required}"
 : "${BH_PROFILE_VOLUME:?BH_PROFILE_VOLUME is required}"
+: "${XVFB_SCREEN:=1920x1080x24}"
+
+if [[ ! "$XVFB_SCREEN" =~ ^[0-9]+x[0-9]+x(8|16|24|32)$ ]]; then
+  echo "Invalid XVFB_SCREEN: $XVFB_SCREEN. Use WIDTHxHEIGHTxDEPTH, e.g. 1440x900x24." >&2
+  exit 2
+fi
 
 if [[ ! "$BH_BU_NAME" =~ ^[A-Za-z0-9_-]{1,64}$ ]]; then
   echo "Invalid BH_BU_NAME: $BH_BU_NAME. Use only A-Z, a-z, 0-9, underscore, hyphen." >&2
@@ -52,6 +58,17 @@ if [[ -n "${BH_VNC_PORT:-}" ]]; then
   fi
   if [[ "${PATCHRIGHT_HEADLESS:-0}" != "0" ]]; then
     echo "BH_VNC_PORT requires headed Chrome. Unset PATCHRIGHT_HEADLESS or set it to 0." >&2
+    exit 2
+  fi
+fi
+
+if [[ -n "${BH_VNC_PASSWORD_FILE:-}" ]]; then
+  if [[ -z "${BH_VNC_PORT:-}" ]]; then
+    echo "BH_VNC_PASSWORD_FILE requires BH_VNC_PORT." >&2
+    exit 2
+  fi
+  if [[ "${BH_VNC_PASSWORD_FILE}" != /* || ! -f "${BH_VNC_PASSWORD_FILE}" || ! -r "${BH_VNC_PASSWORD_FILE}" ]]; then
+    echo "BH_VNC_PASSWORD_FILE must be an absolute, readable regular file." >&2
     exit 2
   fi
 fi
@@ -104,7 +121,7 @@ runtime_dir="${BH_RUNTIME_DIR:-${TMPDIR:-/tmp}/bh-${project_hash}/runtime}"
 tmp_dir="${BH_TMP_DIR:-${TMPDIR:-/tmp}/bh-${project_hash}/tmp}"
 downloads_dir="$project_root/${BH_DOWNLOADS_DIR:-.browser-harness/downloads}"
 image_context="$project_root/docker/browser-harness-patchright"
-config_sig="${BH_IMAGE}|${BH_DOCKER_PLATFORM}|${BH_HOST_PORT}|${BH_PROFILE_VOLUME}|${downloads_dir}|${BH_DOCKER_EXTRA_ARGS:-}|${PATCHRIGHT_HEADLESS:-0}|${PATCHRIGHT_EXTRA_ARGS:-}|${PATCHRIGHT_BROWSER_EXECUTABLE:-/usr/bin/chromium}|${PATCHRIGHT_BROWSER_CHANNEL:-}|${CHROMIUM_SANDBOX:-0}|${BH_HOST_RESOLVER_RULES:-}|${BH_BROWSER_ORIGIN:-}|${BH_VNC_PORT:-}"
+config_sig="${BH_IMAGE}|${BH_DOCKER_PLATFORM}|${BH_HOST_PORT}|${BH_PROFILE_VOLUME}|${downloads_dir}|${BH_DOCKER_EXTRA_ARGS:-}|${PATCHRIGHT_HEADLESS:-0}|${PATCHRIGHT_EXTRA_ARGS:-}|${PATCHRIGHT_BROWSER_EXECUTABLE:-/usr/bin/chromium}|${PATCHRIGHT_BROWSER_CHANNEL:-}|${CHROMIUM_SANDBOX:-0}|${BH_HOST_RESOLVER_RULES:-}|${BH_BROWSER_ORIGIN:-}|${BH_VNC_PORT:-}|${BH_VNC_PASSWORD_FILE:-}|${XVFB_SCREEN}"
 
 # This project wrapper is intentionally local-only: no browser-harness cloud
 # browsers, no real-browser cookie/profile import, and no public CDP binding.
@@ -345,9 +362,37 @@ create_container() {
   fi
 
   local -a vnc_args=()
+  local -a vnc_env_args=()
+  local -a vnc_mount_args=()
+  local vnc_secret_volume="${BH_CONTAINER_NAME}-vnc-password"
   if [[ -n "${BH_VNC_PORT:-}" ]]; then
     # Loopback-only, exactly like CDP. Never publish this on 0.0.0.0.
     vnc_args=(-p "127.0.0.1:${BH_VNC_PORT}:5900")
+    if [[ -n "${BH_VNC_PASSWORD_FILE:-}" ]]; then
+      # Docker Desktop preserves restrictive host modes on bind mounts, but the
+      # image runs as pwuser. Stage the encrypted password in a private Docker
+      # volume so normal tigervncpasswd mode 0600 files remain usable without
+      # making the host credential world-readable.
+      docker volume create "$vnc_secret_volume" >/dev/null \
+        || fail "Could not create the VNC password volume: ${vnc_secret_volume}"
+      if ! docker run --rm \
+        "${platform_args[@]}" \
+        --user root \
+        --entrypoint sh \
+        -v "${BH_VNC_PASSWORD_FILE}:/source-password:ro" \
+        -v "${vnc_secret_volume}:/staged-password" \
+        "$BH_IMAGE" \
+        -c 'install -m 0400 -o pwuser -g pwuser /source-password /staged-password/password'; then
+        docker volume rm "$vnc_secret_volume" >/dev/null 2>&1 || true
+        fail "Could not stage BH_VNC_PASSWORD_FILE for the container user."
+      fi
+      vnc_env_args=(-e "BH_VNC_PASSWORD_FILE=/run/secrets/bh-vnc-password/password")
+      vnc_mount_args=(-v "${vnc_secret_volume}:/run/secrets/bh-vnc-password:ro")
+    else
+      docker volume rm "$vnc_secret_volume" >/dev/null 2>&1 || true
+    fi
+  else
+    docker volume rm "$vnc_secret_volume" >/dev/null 2>&1 || true
   fi
 
   local output=""
@@ -358,16 +403,19 @@ create_container() {
     "${extra_args[@]}" \
     -p "127.0.0.1:${BH_HOST_PORT}:9222" \
     "${vnc_args[@]}" \
+    "${vnc_env_args[@]}" \
     -e BH_VNC_ENABLED="$([[ -n "${BH_VNC_PORT:-}" ]] && echo 1 || echo 0)" \
     --add-host=host.docker.internal:host-gateway \
     -e CDP_PORT=9222 \
     -e CDP_HOST=0.0.0.0 \
     -e PATCHRIGHT_HEADLESS="${PATCHRIGHT_HEADLESS:-0}" \
     -e PATCHRIGHT_EXTRA_ARGS="${PATCHRIGHT_EXTRA_ARGS:-}" \
+    -e XVFB_SCREEN="${XVFB_SCREEN}" \
     -e BH_HOST_RESOLVER_RULES="${BH_HOST_RESOLVER_RULES:-}" \
     -e PATCHRIGHT_BROWSER_EXECUTABLE="${PATCHRIGHT_BROWSER_EXECUTABLE:-/usr/bin/chromium}" \
     -e PATCHRIGHT_BROWSER_CHANNEL="${PATCHRIGHT_BROWSER_CHANNEL:-}" \
     -e CHROMIUM_SANDBOX="${CHROMIUM_SANDBOX:-0}" \
+    "${vnc_mount_args[@]}" \
     -v "${BH_PROFILE_VOLUME}:/data/profile" \
     -v "${downloads_dir}:/data/downloads" \
     -v "${project_root}:${project_root}:rw" \
@@ -503,6 +551,7 @@ case "$cmd" in
     echo "container=$BH_CONTAINER_NAME"
     echo "image=$BH_IMAGE"
     echo "docker_platform=$BH_DOCKER_PLATFORM"
+    echo "xvfb_screen=$XVFB_SCREEN"
     echo "cdp_url=$cdp_url"
     if [[ -n "${BH_BROWSER_ORIGIN:-}" ]]; then
       echo "browser_origin=$BH_BROWSER_ORIGIN"
@@ -531,7 +580,10 @@ case "$cmd" in
     stop_daemon
     require_docker
     if container_exists; then
-      docker rm -f "$BH_CONTAINER_NAME" >/dev/null || true
+      # Give the launcher a chance to close Chrome and flush the persistent profile
+      # before recreating the container. A forced removal can lose session state.
+      docker stop "$BH_CONTAINER_NAME" >/dev/null || true
+      docker rm "$BH_CONTAINER_NAME" >/dev/null || true
     fi
     launch_browser
     ;;

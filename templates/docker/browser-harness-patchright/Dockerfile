@@ -1,7 +1,7 @@
 ARG PYTHON_IMAGE=python:3.12-bookworm
 FROM ${PYTHON_IMAGE}
 
-ARG PATCHRIGHT_VERSION=1.61.1
+ARG PATCHRIGHT_VERSION=1.62.3
 
 ENV PYTHONUNBUFFERED=1
 
@@ -12,11 +12,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
     curl \
     fonts-liberation \
-    x11vnc \
+    tigervnc-standalone-server \
+    tigervnc-tools \
     xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 RUN python -m pip install --no-cache-dir "patchright==${PATCHRIGHT_VERSION}"
+
+# OPTIONAL Google Chrome channel (upstream Patchright best practice). Google does
+# not publish linux/arm64 Chrome debs, so Chrome-channel images must be built
+# with --platform linux/amd64 (native amd64 or emulated). Keep the portable
+# default (0) so the standard arm64/amd64 Chromium image is unchanged.
+ARG INSTALL_GOOGLE_CHROME=0
+RUN if [ "$INSTALL_GOOGLE_CHROME" = "1" ]; then \
+        apt-get update \
+        && apt-get install -y --no-install-recommends wget \
+        && wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+        && apt-get install -y /tmp/chrome.deb \
+        && rm -f /tmp/chrome.deb \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# Mapping browser localhost traffic to Docker's host gateway is intentional for
+# testing host dev servers. Suppress Chromium's generic dangerous-flag banner
+# with its supported machine policy instead of test-only browser switches.
+RUN install -d -m 0755 /etc/chromium/policies/managed \
+    && printf '%s\n' '{"CommandLineFlagSecurityWarningsEnabled":false}' \
+        > /etc/chromium/policies/managed/browser-harness.json \
+    && chmod 0644 /etc/chromium/policies/managed/browser-harness.json
 
 RUN useradd --create-home --shell /bin/bash pwuser \
     && mkdir -p /app /data/profile /data/downloads \
@@ -37,7 +60,7 @@ ENV DISPLAY=:99 \
     PATCHRIGHT_BROWSER_EXECUTABLE=/usr/bin/chromium \
     CHROMIUM_SANDBOX=0
 
-EXPOSE 9222
+EXPOSE 9222 5900
 
 # Playwright/Patchright containers should be run with Docker's init process
 # (`docker run --init` or Compose `init: true`) so Chrome/Xvfb children are
@@ -47,10 +70,11 @@ EXPOSE 9222
 # loopback-only (for example 127.0.0.1:9222:9222) and is intentionally not
 # decided by this image.
 #
-# x11vnc is installed but never started unless BH_VNC_ENABLED=1. It exists for
-# one-time interactive work inside the isolated profile (for example signing in
-# to a service the harness must not sign in to on the operator's behalf). Like
-# CDP, its host publishing must stay loopback-only.
+# Headed runs use Xvfb unless BH_VNC_ENABLED=1, when Xtigervnc becomes the X
+# server so clipboard exchange uses TigerVNC's native modern-X11 support. VNC
+# exists only for one-time interactive work inside the isolated profile (for
+# example signing in to a service the harness must not sign in to). Like CDP,
+# its host publishing must stay loopback-only.
 #
 # Docker Desktop vs native Linux notes:
 # - Prefer `--shm-size=1g` (or larger) for headed Chrome stability. Avoid

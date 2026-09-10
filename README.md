@@ -118,7 +118,7 @@ Or run the wrapper manually:
 
 ### What the image contains
 
-`docker/browser-harness-patchright/Dockerfile` starts from `python:3.12-bookworm` and installs Debian's system Chromium (portable across amd64 and arm64), `xvfb` for a headed display, `x11vnc` for optional interactive access, and `patchright` pinned by the `PATCHRIGHT_VERSION` build arg. `launch_patchright_cdp.py` is the container entrypoint: it launches a persistent Chrome context against `/data/profile`, waits for CDP, and publishes it on the container interface through a small TCP proxy.
+`docker/browser-harness-patchright/Dockerfile` starts from `python:3.12-bookworm` and installs Debian's system Chromium (portable across amd64 and arm64), `xvfb` for normal headed runs, TigerVNC for optional interactive access with bidirectional clipboard support, and `patchright` pinned by the `PATCHRIGHT_VERSION` build arg. `launch_patchright_cdp.py` is the container entrypoint: it launches a persistent Chrome context against `/data/profile`, waits for CDP, and publishes it on the container interface through a small TCP proxy.
 
 ### Building
 
@@ -131,14 +131,14 @@ You normally never build by hand. `./scripts/bh url` builds the image if the tag
 Build explicitly when you want to see the output, or after editing the Dockerfile or launcher:
 
 ```bash
-docker build -t browser-harness-patchright:1.61.1 docker/browser-harness-patchright
+docker build -t browser-harness-patchright:1.61.1-vnc-clipboard docker/browser-harness-patchright
 ```
 
 **The wrapper only builds when the tag is absent.** After changing the Dockerfile or `launch_patchright_cdp.py`, either bump `BH_IMAGE` in `.browser-harness.env` to a new tag, or remove the existing image first:
 
 ```bash
 ./scripts/bh stop
-docker rmi browser-harness-patchright:1.61.1
+docker rmi browser-harness-patchright:1.61.1-vnc-clipboard
 ./scripts/bh url                # rebuilds, then recreates the container
 ```
 
@@ -223,6 +223,9 @@ Chrome runs headed on a virtual display with no window on your desktop. For one-
 
 ```bash
 # in .browser-harness.env
+PATCHRIGHT_HEADLESS=0
+XVFB_SCREEN=1440x900x24
+PATCHRIGHT_EXTRA_ARGS=--window-size=1400,840
 BH_VNC_PORT=15900
 ```
 
@@ -231,7 +234,23 @@ BH_VNC_PORT=15900
 ./scripts/bh status | grep vnc     # vnc://127.0.0.1:15900
 ```
 
-Connect with any VNC client (macOS: open that URL in Screen Sharing). Requires headed Chrome; the wrapper refuses `BH_VNC_PORT` when `PATCHRIGHT_HEADLESS` is not `0`. The image must include `x11vnc` — rebuild if yours predates it. **Unset it when finished**: the endpoint is unauthenticated, on the same trust boundary as CDP.
+Connect with any VNC client (macOS: open that URL in Screen Sharing). Requires headed Chrome; the wrapper refuses `BH_VNC_PORT` when `PATCHRIGHT_HEADLESS` is not `0`. The image must include TigerVNC — rebuild with a new image tag if yours predates clipboard support. For clients that require password authentication, set `BH_VNC_PASSWORD_FILE` to an absolute host path created with `tigervncpasswd`; the wrapper stages the encrypted file as a mode-`0400` copy in a private Docker volume and advertises VNCAuth.
+
+For clipboard sharing in macOS Screen Sharing:
+
+1. Choose **Edit → Use Shared Clipboard** in Screen Sharing.
+2. Copy locally with **Command-C**, then paste into Linux Chromium with **Control-V**.
+3. Copy in Linux Chromium with **Control-C**, then paste locally with **Command-V**.
+
+No separate `vncconfig` process is required. The launcher enables TigerVNC's `AcceptCutText` and `SendCutText` parameters directly. (`vncconfig` cannot add clipboard support to the former Xvfb + x11vnc arrangement.)
+
+If the viewer is stale or black, restart both the browser container and VNC server, wait for health checks, then reconnect:
+
+```bash
+./scripts/restart-browser-vnc
+```
+
+**Unset `BH_VNC_PORT` when finished**.
 
 ## Oracle consults
 

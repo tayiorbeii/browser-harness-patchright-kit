@@ -68,10 +68,10 @@ The wrapper rejects flags that would break the isolation boundary:
 
 Remote-chrome mode does no cookie sync, so the **container profile** has to be signed in to ChatGPT once. The profile lives in the project's Docker volume (`BH_PROFILE_VOLUME`), so this survives container restarts and `./scripts/bh reload`; it is lost only if that volume is removed.
 
-The container runs headed Chrome under Xvfb with no visible window, so the sign-in needs a temporary view of the display. The image ships `x11vnc`, started only when `BH_VNC_ENABLED=1`.
+The container runs headed Chrome on a virtual X display with no visible window, so the sign-in needs a temporary view of the display. It uses Xvfb normally and switches to TigerVNC's X server only when `BH_VNC_ENABLED=1`, which also provides bidirectional clipboard support.
 
 1. Set `BH_VNC_PORT=15900` in `.browser-harness.env`.
-2. Rebuild if the image predates the `x11vnc` change — `./scripts/bh` only builds when the image tag is absent, so either bump `BH_IMAGE` or `docker rmi <current tag>` first.
+2. Use a new `BH_IMAGE` tag and rebuild if the image predates TigerVNC clipboard support — `./scripts/bh` only builds when the image tag is absent.
 3. `./scripts/bh reload`
 4. `./scripts/oracle login` — opens chatgpt.com in the container and prints the VNC URL.
 5. Connect to `vnc://127.0.0.1:15900` (macOS: Screen Sharing) and **sign in yourself**.

@@ -65,7 +65,7 @@ Mitigation:
 
 ## Resolved: VNC/debug viewing
 
-x11vnc is installed in the image and started when `BH_VNC_ENABLED=1`. The host port is published on loopback only via `BH_VNC_PORT`. See README.md for interactive access instructions. A browser-based noVNC viewer remains a future option for operators who prefer a web UI over a native VNC client.
+Headed runs normally use Xvfb. When `BH_VNC_ENABLED=1`, TigerVNC becomes the X server so modern X11 clipboard targets work in both directions with VNC clients. The host port is published on loopback only via `BH_VNC_PORT`. See README.md for macOS Screen Sharing and clipboard instructions. A browser-based noVNC viewer remains a future option for operators who prefer a web UI over a native VNC client.
 
 ## Open question: shared image management
 

@@ -60,6 +60,12 @@ MIRROR_RULES = (
         0o100755,
     ),
     ("scripts/bh", "templates/scripts/bh", (), 0o100755),
+    (
+        "scripts/restart-browser-vnc",
+        "templates/scripts/restart-browser-vnc",
+        (),
+        0o100755,
+    ),
     ("scripts/oracle", "templates/scripts/oracle", (), 0o100755),
     (".oracle/config.json", "templates/.oracle/config.json", (), 0o100644),
     (
