@@ -1,7 +1,7 @@
 ARG PYTHON_IMAGE=python:3.12-bookworm
 FROM ${PYTHON_IMAGE}
 
-ARG PATCHRIGHT_VERSION=1.61.1
+ARG PATCHRIGHT_VERSION=1.62.3
 
 ENV PYTHONUNBUFFERED=1
 
@@ -18,6 +18,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN python -m pip install --no-cache-dir "patchright==${PATCHRIGHT_VERSION}"
+
+# OPTIONAL Google Chrome channel (upstream Patchright best practice). Google does
+# not publish linux/arm64 Chrome debs, so Chrome-channel images must be built
+# with --platform linux/amd64 (native amd64 or emulated). Keep the portable
+# default (0) so the standard arm64/amd64 Chromium image is unchanged.
+ARG INSTALL_GOOGLE_CHROME=0
+RUN if [ "$INSTALL_GOOGLE_CHROME" = "1" ]; then \
+        apt-get update \
+        && apt-get install -y --no-install-recommends wget \
+        && wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+        && apt-get install -y /tmp/chrome.deb \
+        && rm -f /tmp/chrome.deb \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 # Mapping browser localhost traffic to Docker's host gateway is intentional for
 # testing host dev servers. Suppress Chromium's generic dangerous-flag banner
