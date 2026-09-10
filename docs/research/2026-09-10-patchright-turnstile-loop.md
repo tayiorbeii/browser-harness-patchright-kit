@@ -49,3 +49,43 @@ Most relevant issue: [#224 "Cloudflare Challenge Fails in GitHub Actions / Docke
 ## Conclusion / next steps
 
 No upstream release fixes the loop; it is environment-bound (Chromium brand + SwiftShader + container signals per #224). A7's solve→resume leg must be verified in a **real browser**. If a native amd64 Linux host becomes available, rebuild with `--build-arg INSTALL_GOOGLE_CHROME=1 --platform linux/amd64` and set `PATCHRIGHT_BROWSER_EXECUTABLE=/opt/google/chrome/chrome` + `BH_DOCKER_PLATFORM=linux/amd64` — that is the one untested upstream-recommended lever.
+
+---
+
+## Addendum (same day, later): A7 container E2E + four extension defects
+
+### Outcome
+
+The Deep audit now completes end-to-end in the container: run `c20f2c12-79b7-4b0e-8d37-a2c08b0ba0ed`
+→ state `COMPLETE`, with **U-DISC-01 (`/robots.txt`) and U-DISC-02 (`/sitemap.xml`) measured
+same-origin** (real graded findings, not `runner_unavailable`). The genuine-challenge pause path was
+also exercised live: pause with structural signals only (`cf-ray`, `challenge_platform_script`), user
+solves in VNC, `cf_clearance` honored on reload.
+
+### Extension defects found and fixed (seer repo, PR #685 branch `feat/denniskirk-error-sitemap-fix`)
+
+| Commit | Defect |
+|---|---|
+| `21297c8a2c` | Challenge detector scanned **raw HTML** for generic CAPTCHA language, so a healthy page carrying `data-recaptcha="false"` produced a bogus `js_challenge_present` and mis-paused every Deep run. Generic markers now scan visible text only; structural Cloudflare markers (challenge-platform script, cf-turnstile class, interstitial titles) still catch real interstitials. |
+| `9f67bc6b81` | Resume could never work in a real browser: `readPause` destructured `chrome.storage.local.get` off its StorageArea and invoked it detached → `Illegal invocation` → generic "The audit could not start." Also `recoverStaleDeepRuns` swept PAUSED runs after 5 minutes, deleting the checkpoint **while the user was still solving**. |
+| `a839f50efb` | A paused run whose tab no longer exists (browser restart / user closed it) now retires as `ERROR/navigation_failed` with an actionable message and clears the pause key, instead of falling through the generic capture-failure path. |
+| `d9cfb6d29e` | Resume/cancel pre-checks read durable state **outside** `start()`'s error mapping, so any rejection (IndexedDB read, malformed checkpoint URL, pause-key cleanup) still surfaced as the generic message. Now typed (`storage_unavailable` / `navigation_failed`); terminal-path cleanup is best-effort. |
+
+### Operational gotcha: extension changes need a service-worker script-cache clear
+
+Chrome executed a **cached copy of the extension's service worker** (old bundle) while the on-disk and
+`chrome.runtime.getURL`-served file was the new build — and the cache **survives browser restarts**.
+Evidence: the live exception stack pointed at bundle offset 66263, which in the current bundle is
+audit-engine access-outcome code, not a storage call; the `Illegal invocation` disappeared only after
+deleting the profile's `Default/Service Worker` directory. A plain container/browser restart is NOT enough.
+
+Procedure after `bun scripts/sync-seer-extension.ts <extension-dir>`:
+
+1. `docker stop bh-browser_harness_patchright_project_kit`
+2. `docker run --rm -u root -v bh-browser_harness_patchright_project_kit-profile:/p --platform linux/arm64 --entrypoint sh browser-harness-patchright:1.62.3-vnc-clipboard -c 'rm -rf "/p/Default/Service Worker"'`
+3. `docker start bh-browser_harness_patchright_project_kit` (CDP ready in ~10s)
+4. Verify the staged bundle hash matches the worktree dist hash, and that `/json/list` shows the extension service worker.
+
+Extension storage (`chrome.storage`, IndexedDB checkpoints, cookies) is preserved by this procedure, so a
+paused run stays resumable. Candidate kit improvement: teach `scripts/bh reload` to clear the SW script
+cache when the staged extension changed.
