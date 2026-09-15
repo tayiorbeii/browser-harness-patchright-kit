@@ -42,7 +42,11 @@
     init: true
     environment:
       RIVE_RESOLVER_BASE_URL: http://rive-resolver:8787
-      BROWSER_CDP_URL: http://sofascore-browser:9222
+      # Chrome's DevTools HTTP endpoint rejects non-IP/localhost Host headers
+      # ("Host header is specified and is not an IP address or localhost"), so
+      # the CDP URL must use the browser container's IP literal, not its DNS
+      # name. Reuse SOFASCORE_BROWSER_UPSTREAM_IP so there's one source of truth.
+      BROWSER_CDP_URL: http://${SOFASCORE_BROWSER_UPSTREAM_IP:-172.30.91.14}:9222
       RIVE_ADMIN_TOKEN: ${RIVE_ADMIN_TOKEN:?set RIVE_ADMIN_TOKEN}
       SYNC_INTERVAL_SECONDS: ${SOFASCORE_SYNC_INTERVAL_SECONDS:-900}
       # Keep this at 0 (dry-run, logs only) for the first few cycles on a
