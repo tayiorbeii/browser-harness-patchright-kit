@@ -12,8 +12,10 @@ from __future__ import annotations
 import itertools
 import json
 import logging
+import socket
 import threading
 import time
+import urllib.parse
 import urllib.request
 
 import websocket  # pip: websocket-client
@@ -34,7 +36,24 @@ class CDPClient:
     """
 
     def __init__(self, cdp_http_base: str, connect_timeout: float = 20.0) -> None:
-        self._http_base = cdp_http_base.rstrip("/")
+        # Chrome's CDP HTTP endpoint rejects any request whose Host header
+        # isn't "localhost" or a bare IP address (500 "Host header is
+        # specified and is not an IP address or localhost.") -- confirmed
+        # live against the browser-harness-patchright container. A docker
+        # hostname like "sofascore-browser" fails that check verbatim, so
+        # every request this client makes resolves the hostname to its IP
+        # once here and uses the IP everywhere after -- for both the HTTP
+        # discovery call and the WebSocket connection.
+        parsed = urllib.parse.urlsplit(cdp_http_base.rstrip("/"))
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port or 9222
+        try:
+            resolved_ip = socket.gethostbyname(host)
+        except OSError:
+            resolved_ip = host  # already an IP, or DNS not needed (e.g. localhost)
+        self._http_base = "%s://%s:%d" % (parsed.scheme or "http", resolved_ip, port)
+        self._resolved_ip = resolved_ip
+        self._resolved_port = port
         self._ws: websocket.WebSocket | None = None
         self._id_counter = itertools.count(1)
         self._lock = threading.Lock()
@@ -53,9 +72,17 @@ class CDPClient:
                     self._http_base + "/json/version", timeout=3,
                 ) as resp:
                     data = json.loads(resp.read().decode())
-                url = data.get("webSocketDebuggerUrl")
-                if url:
-                    return url
+                raw_url = data.get("webSocketDebuggerUrl")
+                if raw_url:
+                    # Chrome self-reports webSocketDebuggerUrl using its own
+                    # --remote-debugging-address (typically 127.0.0.1, or
+                    # whatever the request's Host header echoed back) --
+                    # that host:port is meaningless from a different
+                    # container. Keep only the path (/devtools/browser/
+                    # <uuid>) and rebuild the URL against the resolved IP
+                    # and port this client actually reached.
+                    path = urllib.parse.urlsplit(raw_url).path
+                    return "ws://%s:%d%s" % (self._resolved_ip, self._resolved_port, path)
             except Exception as exc:  # noqa: BLE001
                 last_err = exc
             time.sleep(1.0)
