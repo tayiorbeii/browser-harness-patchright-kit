@@ -354,3 +354,88 @@ service is deployed and confirmed. Consider disabling the launchd job
 the native service has run cleanly for a few cycles, to avoid two
 processes racing to mark the same events (harmless since the overlay write
 is idempotent, but redundant).
+
+## Deploy result, 2026-09-15: pipeline proven, blocked on an external IP block
+
+Both `sofascore-browser` and `sofascore-sync` are deployed, healthy, and
+running the 15-minute loop on blackpearl.local right now
+(`SOFASCORE_SYNC_APPLY=0`, dry-run -- writes nothing). Confirmed:
+
+- `cdp_client.py` connects to `sofascore-browser` over the internal docker
+  network using its resolved IP (`http://172.30.91.14:9222` in the logs),
+  passing Chrome's Host-header check.
+- `sync_daemon.py` reaches `rive-resolver`'s admin API over the same
+  network (`tracked=184` real events in the first cycle) and correctly
+  filters candidates.
+- All other services (`dispatcharr`, `-celery`, `-db`, `-redis`,
+  `tuliprox`, `rive-resolver`) untouched, uptimes unchanged.
+
+**What's blocking `SOFASCORE_SYNC_APPLY=1`:** sofascore.com itself refuses
+blackpearl.local's public IP outright.
+
+```
+$ curl -D - -o /dev/null https://www.sofascore.com/     # from blackpearl.local
+HTTP/2 403
+server: Varnish
+content-length: 48
+{"error": {"code": 403, "reason": "Forbidden" }}
+```
+
+This is **not** the Cloudflare TLS-fingerprint gate this whole design was
+built around (that gate is what the Patchright/CDP browser exists to
+clear, and it does -- confirmed working from this Mac's IP and from
+blackpearl.local's own IP for reachability up to this point). SofaScore is
+fronted by **Fastly** (`server: Varnish`, DNS resolves to
+`*.map.fastly.net`), and this 403 has none of the markers of a bot
+challenge -- no HTML interstitial, no `cf-ray`/challenge headers, just a
+small (48-byte) generic JSON body, identical for the homepage AND the API,
+identical over IPv4 and IPv6. That shape matches a straight **edge-level
+IP or ASN block**, not a per-request bot-detection challenge -- something
+no amount of browser stealth (Patchright, plain Playwright, or anything
+else) can clear, because it isn't evaluating the request's browser
+fingerprint at all.
+
+blackpearl.local's public IP is `65.129.5.149` (CenturyLink Communications
+/ AS209, Boise, Idaho -- a genuine residential ISP, not a known VPN or
+hosting provider) -- checked via `ipapi.co`, not obviously "bad" IP
+reputation on paper, but blocked by SofaScore/Fastly regardless. Possible
+causes: SofaScore/Fastly may apply reputation scoring at the ASN or
+/24-subnet level rather than the single IP, and something else on this ISP
+range's history could have triggered it; or SofaScore blocks that ASN
+outright for some other reason. This is outside what this project
+controls -- it's SofaScore's own edge policy toward that network, not a
+bug in the resolver, the browser container, or the CDP client.
+
+### What this means practically
+
+- The **Mac-based path** (`sofascore_sync.py` + launchd, this Mac's IP)
+  still works when not over-tested -- it already found and removed 5 real
+  finished games from Dispatcharr earlier today (see the first deploy
+  section above). This Mac's IP is not CenturyLink/AS209.
+- The **native Unraid path** is fully built, deployed, and healthy, but
+  cannot write real overrides until blackpearl.local can reach
+  sofascore.com. Left in dry-run (`SOFASCORE_SYNC_APPLY=0`) so it's
+  harmless while this is unresolved.
+
+### Options to actually unblock the Unraid path
+
+1. **Route `sofascore-browser`'s egress through a different IP** -- a VPN
+   or proxy container on the same docker network (e.g. Gluetun, a
+   WireGuard/OpenVPN client container) that `sofascore-browser` uses for
+   its outbound traffic only, leaving every other service's egress
+   unchanged. This is the most direct fix if such a service/subscription
+   is available.
+2. **Ask SofaScore/Fastly, or wait it out** -- if this is a transient
+   ASN-reputation flag rather than a permanent block, it may clear on its
+   own; re-run the same `curl -D -` check from blackpearl.local
+   periodically.
+3. **Keep the Mac as the production path** for now, accepting the
+   "requires this Mac to be on" limitation, since it demonstrably works.
+4. **Switch data sources** -- a different sports-scores API/site not
+   blocking this ASN. Would need the same evidence-gathering process this
+   session used for SofaScore repeated against a new target before
+   trusting it.
+
+None of these require more browser-automation work -- the automation side
+is done and proven; this is a network-egress decision for the operator.
+
