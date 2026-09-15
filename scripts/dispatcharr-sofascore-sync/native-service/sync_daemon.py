@@ -57,11 +57,14 @@ APPLY = os.environ.get("SOFASCORE_SYNC_APPLY", "0").strip().lower() in ("1", "tr
 BROWSER_CDP_URL = os.environ.get("BROWSER_CDP_URL", "http://sofascore-browser:9222")
 HEARTBEAT_PATH = os.environ.get("HEARTBEAT_PATH", "/tmp/sofascore-sync.heartbeat")
 
-MIN_AGE_MINUTES = 70
-MAX_LOOKUP_MINUTES = 24 * 60
+MAX_LOOKUP_MINUTES = 7 * 24 * 60  # only retain a week of unresolved history
 MATCH_WINDOW_SECONDS = 6 * 60 * 60
 
-FINISHED_TYPES = {"finished", "postponed", "cancelled", "canceled", "abandoned"}
+# Dispatcharr should expose only events SofaScore says are upcoming or live.
+# Any other explicit status (finished, cancelled, postponed, suspended, etc.)
+# is removed through the resolver overlay. Empty status is treated as unknown
+# and is left untouched so a transient API/schema failure cannot hide events.
+VISIBLE_STATUS_TYPES = {"notstarted", "inprogress"}
 
 SPORT_SLUG_BY_LABEL = {
     "baseball": "baseball",
@@ -228,7 +231,7 @@ def team_events(page: CDPPage, cache: dict, team_id: int) -> list[dict]:
     return cache[team_id]
 
 
-def find_finished_match(
+def find_matching_match(
     page: CDPPage, search_cache: dict, events_cache: dict,
     team_a: str, team_b: str, sport_slug: str, approx_start: float | None,
 ) -> dict | None:
@@ -272,7 +275,7 @@ def run_once(page: CDPPage) -> None:
         if start_at is None:
             continue
         age_minutes = (now - float(start_at)) / 60.0
-        if age_minutes < MIN_AGE_MINUTES or age_minutes > MAX_LOOKUP_MINUTES:
+        if age_minutes > MAX_LOOKUP_MINUTES:
             continue
         sport_slug = sport_slug_for_category(ev.get("category") or "")
         if sport_slug is None:
@@ -288,13 +291,13 @@ def run_once(page: CDPPage) -> None:
     events_cache: dict = {}
     ended = 0
     for ev, (team_a, team_b), sport_slug in candidates:
-        match = find_finished_match(
+        match = find_matching_match(
             page, search_cache, events_cache, team_a, team_b, sport_slug, ev.get("start_at"),
         )
         if match is None:
             continue
         status_type = ((match.get("status") or {}).get("type") or "").lower()
-        if status_type not in FINISHED_TYPES:
+        if not status_type or status_type in VISIBLE_STATUS_TYPES:
             continue
         note = "sofascore #%s %s vs %s status=%s" % (
             match.get("id"),
@@ -302,7 +305,7 @@ def run_once(page: CDPPage) -> None:
             (match.get("awayTeam") or {}).get("name"),
             status_type,
         )
-        logger.info("finished: %s | %s", ev.get("title"), note)
+        logger.info("excluded by SofaScore status: %s | %s", ev.get("title"), note)
         if APPLY:
             try:
                 push_mark_ended(ev["origin"], ev["event_id"], str(match.get("id")), note)

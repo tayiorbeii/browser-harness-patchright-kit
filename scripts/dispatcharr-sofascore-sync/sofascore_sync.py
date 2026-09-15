@@ -50,13 +50,12 @@ RESOLVER_CONTAINER = "unified-iptv-phase1-rive-resolver-1"
 RESOLVER_URL = "http://127.0.0.1:8787"
 ADMIN_TOKEN_ENV_VAR = "RIVE_ADMIN_TOKEN"  # read from THIS Mac's env, sent over ssh
 
-MIN_AGE_MINUTES = 70          # don't bother checking games that just started
-MAX_LOOKUP_MINUTES = 24 * 60  # ignore anything scheduled more than a day ago (stale row)
+MAX_LOOKUP_MINUTES = 7 * 24 * 60  # only retain a week of unresolved history
 MATCH_WINDOW_SECONDS = 6 * 60 * 60  # +/- 6h between dispatcharr start_at and sofascore kickoff
 
-FINISHED_TYPES = {"finished", "postponed", "cancelled", "canceled", "abandoned"}
-# Deliberately NOT included: "notstarted", "inprogress", "interrupted"
-# ("interrupted" = weather/rain delay etc -- temporarily paused, not over).
+# Keep only the two SofaScore states Dispatcharr should expose. Empty status is
+# unknown and is left untouched so a transient API/schema failure is fail-open.
+VISIBLE_STATUS_TYPES = {"notstarted", "inprogress"}
 
 # event_group ("Sports Events | Baseball", "Sports Events | Fighting: WWE", ...)
 # -> sofascore sport slug. None = skip (not a clean two-team "vs" match on
@@ -259,7 +258,7 @@ def _url_quote(s: str) -> str:
     return urllib.parse.quote(s)
 
 
-def find_finished_match(
+def find_matching_match(
     team_a: str, team_b: str, sport_slug: str, approx_start: float | None,
 ) -> dict | None:
     """Return the matching sofascore event dict, or None if no confident match."""
@@ -314,7 +313,7 @@ def run(apply_changes: bool) -> int:
         if start_at is None:
             continue
         age_minutes = (now - float(start_at)) / 60.0
-        if age_minutes < MIN_AGE_MINUTES or age_minutes > MAX_LOOKUP_MINUTES:
+        if age_minutes > MAX_LOOKUP_MINUTES:
             continue
         sport_slug = sport_slug_for_category(ev.get("category") or "")
         if sport_slug is None:
@@ -339,7 +338,7 @@ def run(apply_changes: bool) -> int:
     to_apply = []
     try:
         for ev, (team_a, team_b), sport_slug in candidates:
-            match = find_finished_match(team_a, team_b, sport_slug, ev.get("start_at"))
+            match = find_matching_match(team_a, team_b, sport_slug, ev.get("start_at"))
             if match is None:
                 results.append({**_row(ev), "verdict": "no_match"})
                 continue
@@ -350,11 +349,13 @@ def run(apply_changes: bool) -> int:
                 (match.get("awayTeam") or {}).get("name"),
                 status_type,
             )
-            if status_type in FINISHED_TYPES:
-                results.append({**_row(ev), "verdict": "ended", "note": note})
-                to_apply.append((ev, str(match.get("id")), note))
+            if not status_type:
+                results.append({**_row(ev), "verdict": "unknown_status", "note": note})
+            elif status_type in VISIBLE_STATUS_TYPES:
+                results.append({**_row(ev), "verdict": "visible", "note": note})
             else:
-                results.append({**_row(ev), "verdict": "still_live", "note": note})
+                results.append({**_row(ev), "verdict": "excluded", "note": note})
+                to_apply.append((ev, str(match.get("id")), note))
     finally:
         close_tab(tab_id)  # noqa: F821
 

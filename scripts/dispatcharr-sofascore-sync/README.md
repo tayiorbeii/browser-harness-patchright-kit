@@ -190,6 +190,15 @@ and rebuild `rive-resolver` with `--env-file .env.unified` before restarting it.
 The deployed fix also rejects malformed playback URLs before creating opaque
 proxy handles.
 
+### SofaScore catalog visibility
+
+The native sync service now checks upcoming and active events instead of waiting
+70 minutes after kickoff. It keeps only SofaScore `notstarted` and `inprogress`
+statuses; explicit terminal, cancelled, postponed, suspended, or other
+non-visible statuses are marked ended through the resolver overlay so the next
+Dispatcharr refresh removes them. Unknown or unmatched SofaScore results are
+left untouched on that cycle to fail open during API outages.
+
 Put the same token on this Mac in `~/.config/dispatcharr-sofascore-sync/env`
 (chmod 600):
 
