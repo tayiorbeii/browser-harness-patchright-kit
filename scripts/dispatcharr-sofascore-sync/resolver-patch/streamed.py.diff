@@ -1,0 +1,56 @@
+--- a/app/resolver/streamed.py
++++ b/app/resolver/streamed.py
+@@ -156,13 +156,27 @@
+     return result
+ 
+ 
++def _validated_stream_url(raw_url: str | None) -> str:
++    """Reject malformed or non-HTTP playback URLs before minting a handle."""
++    candidate = str(raw_url or "").strip().strip("\"'")
++    try:
++        parsed = urlsplit(candidate)
++        if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
++            raise ValueError("unsupported playback URL")
++        # httpx catches malformed ports, escapes, and other URL syntax that
++        # urlsplit intentionally accepts for compatibility.
++        httpx.URL(candidate)
++    except (ValueError, httpx.InvalidURL) as exc:
++        raise PlaybackResolutionError("resolved stream has an invalid playable location") from exc
++    return candidate
++
++
+ def _locator(result: EmbedResolutionResult, client: httpx.AsyncClient, fallback_referer: str) -> PlaybackLocator:
+-    if not result.stream_url:
+-        raise PlaybackResolutionError("resolved stream has no playable location")
++    stream_url = _validated_stream_url(result.stream_url)
+     headers = {"User-Agent": USER_AGENT, "Referer": fallback_referer, **result.headers}
+-    cookies = {**cookies_for_url(client, result.stream_url), **result.cookies}
+-    expires_at = result.expires_at or _expiry_from_url(result.stream_url)
+-    return PlaybackLocator(result.stream_url, headers, cookies, expires_at, tuple(result.diagnostics))
++    cookies = {**cookies_for_url(client, stream_url), **result.cookies}
++    expires_at = result.expires_at or _expiry_from_url(stream_url)
++    return PlaybackLocator(stream_url, headers, cookies, expires_at, tuple(result.diagnostics))
+ 
+ 
+ def _parse_stream_rows(payload: object) -> list[StreamedStreamRow]:
+@@ -424,11 +438,16 @@
+         return None
+     if result is None or not result.url:
+         return None
+-    return PlaybackLocator(
+-        result.url,
+-        _stream_headers_for(result.url, embed_url),
++    try:
++        stream_url = _validated_stream_url(result.url)
++    except PlaybackResolutionError:
++        logger.warning("Streamed browser returned an invalid playback URL")
++        return None
++    return PlaybackLocator(
++        stream_url,
++        _stream_headers_for(stream_url, embed_url),
+         dict(getattr(result, "cookies", None) or {}),
+-        _expiry_from_url(result.url),
++        _expiry_from_url(stream_url),
+         ("streamed_embed_browser",),
+     )
+ 

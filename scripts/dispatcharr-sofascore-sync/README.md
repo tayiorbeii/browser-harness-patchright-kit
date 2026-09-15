@@ -176,6 +176,20 @@ docker exec unified-iptv-phase1-rive-resolver-1 sh -c \
   | python3 -m json.tool
 ```
 
+### Streamed provider browser fallback
+
+The Streamed `embed.st` player is an obfuscated JavaScript shell. Its browser
+fallback must be allowed to load these player dependencies:
+
+- `cdn.jsdelivr.net`
+- `strmd.b-cdn.net`
+
+The URL-validation patch is in `resolver-patch/streamed.py.diff`. Add both
+hosts to `RIVE_UPSTREAM_ALLOWED_HOSTS`, recompute `RIVE_RESOLVER_SOURCE_SHA`,
+and rebuild `rive-resolver` with `--env-file .env.unified` before restarting it.
+The deployed fix also rejects malformed playback URLs before creating opaque
+proxy handles.
+
 Put the same token on this Mac in `~/.config/dispatcharr-sofascore-sync/env`
 (chmod 600):
 
