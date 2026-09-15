@@ -7,7 +7,7 @@
   <string>com.taylor.dispatcharr-sofascore-sync</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/taylor/Documents/Projects/00-in-progress/browser_harness_patchright_project_kit/scripts/dispatcharr-sofascore-sync/run_sofascore_sync.sh</string>
+    <string>/Users/taylor/Library/Application Support/dispatcharr-sofascore-sync/run_sofascore_sync.sh</string>
     <string>--apply</string>
   </array>
   <key>StartInterval</key>
@@ -21,7 +21,7 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/Applications/Docker.app/Contents/Resources/bin</string>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/Applications/Docker.app/Contents/Resources/bin:/Users/taylor/.local/bin</string>
   </dict>
 </dict>
 </plist>

@@ -1,0 +1,32 @@
+# Add this service block to
+# /mnt/user/appdata/unified-iptv/stack/docker-compose.unified.phase1.candidate.yml
+# (same file as the rive-resolver/tuliprox/dispatcharr* services), and this
+# to the `networks:` section is already there (upstream is external/shared).
+#
+# .14 is the next free address in the 172.30.91.0/24 upstream subnet as of
+# 2026-09 (.10=rive-resolver, .11=tuliprox, .12=dispatcharr, .13=dispatcharr-celery).
+
+  sofascore-sync:
+    mem_limit: ${SOFASCORE_SYNC_MEMORY_LIMIT:-1g}
+    cpus: "${SOFASCORE_SYNC_CPU_LIMIT:-1.0}"
+    pids_limit: ${SOFASCORE_SYNC_PIDS_LIMIT:-256}
+    build:
+      context: ./sofascore-sync
+      args:
+        SOFASCORE_SYNC_BASE_IMAGE: ${RIVE_RESOLVER_BASE_IMAGE:?set immutable RIVE_RESOLVER_BASE_IMAGE}
+    restart: unless-stopped
+    init: true
+    environment:
+      RIVE_RESOLVER_BASE_URL: http://rive-resolver:8787
+      RIVE_ADMIN_TOKEN: ${RIVE_ADMIN_TOKEN:?set RIVE_ADMIN_TOKEN}
+      SYNC_INTERVAL_SECONDS: ${SOFASCORE_SYNC_INTERVAL_SECONDS:-900}
+      # Keep this at 0 (dry-run, logs only) for the first few cycles on a
+      # fresh deploy before flipping to 1 -- see native-service/README.
+      SOFASCORE_SYNC_APPLY: ${SOFASCORE_SYNC_APPLY:-0}
+    depends_on:
+      rive-resolver:
+        condition: service_healthy
+    networks:
+      upstream:
+        ipv4_address: ${SOFASCORE_SYNC_UPSTREAM_IP:-172.30.91.14}
+    logging: *bounded-logging
