@@ -1,23 +1,48 @@
-# Add this service block to
+# Add BOTH service blocks below to
 # /mnt/user/appdata/unified-iptv/stack/docker-compose.unified.phase1.candidate.yml
-# (same file as the rive-resolver/tuliprox/dispatcharr* services), and this
-# to the `networks:` section is already there (upstream is external/shared).
+# (same file as the rive-resolver/tuliprox/dispatcharr* services). The
+# `networks:` section already defines `upstream` (external/shared) -- no
+# changes needed there.
 #
-# .14 is the next free address in the 172.30.91.0/24 upstream subnet as of
-# 2026-09 (.10=rive-resolver, .11=tuliprox, .12=dispatcharr, .13=dispatcharr-celery).
+# .14 and .15 are the next free addresses in the 172.30.91.0/24 upstream
+# subnet as of 2026-09 (.10=rive-resolver, .11=tuliprox, .12=dispatcharr,
+# .13=dispatcharr-celery).
+
+  sofascore-browser:
+    mem_limit: ${SOFASCORE_BROWSER_MEMORY_LIMIT:-1g}
+    cpus: "${SOFASCORE_BROWSER_CPU_LIMIT:-1.0}"
+    pids_limit: ${SOFASCORE_BROWSER_PIDS_LIMIT:-256}
+    build:
+      context: ./sofascore-sync/browser
+    restart: unless-stopped
+    init: true
+    environment:
+      PATCHRIGHT_HEADLESS: "1"
+      CDP_PORT: "9222"
+    # No host port publish -- CDP is reachable only from other containers
+    # on this network (sofascore-sync), never from the host or internet.
+    networks:
+      upstream:
+        ipv4_address: ${SOFASCORE_BROWSER_UPSTREAM_IP:-172.30.91.14}
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9222/json/version', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging: *bounded-logging
 
   sofascore-sync:
-    mem_limit: ${SOFASCORE_SYNC_MEMORY_LIMIT:-1g}
-    cpus: "${SOFASCORE_SYNC_CPU_LIMIT:-1.0}"
-    pids_limit: ${SOFASCORE_SYNC_PIDS_LIMIT:-256}
+    mem_limit: ${SOFASCORE_SYNC_MEMORY_LIMIT:-256m}
+    cpus: "${SOFASCORE_SYNC_CPU_LIMIT:-0.5}"
+    pids_limit: ${SOFASCORE_SYNC_PIDS_LIMIT:-128}
     build:
       context: ./sofascore-sync
-      args:
-        SOFASCORE_SYNC_BASE_IMAGE: ${RIVE_RESOLVER_BASE_IMAGE:?set immutable RIVE_RESOLVER_BASE_IMAGE}
     restart: unless-stopped
     init: true
     environment:
       RIVE_RESOLVER_BASE_URL: http://rive-resolver:8787
+      BROWSER_CDP_URL: http://sofascore-browser:9222
       RIVE_ADMIN_TOKEN: ${RIVE_ADMIN_TOKEN:?set RIVE_ADMIN_TOKEN}
       SYNC_INTERVAL_SECONDS: ${SOFASCORE_SYNC_INTERVAL_SECONDS:-900}
       # Keep this at 0 (dry-run, logs only) for the first few cycles on a
@@ -26,7 +51,9 @@
     depends_on:
       rive-resolver:
         condition: service_healthy
+      sofascore-browser:
+        condition: service_healthy
     networks:
       upstream:
-        ipv4_address: ${SOFASCORE_SYNC_UPSTREAM_IP:-172.30.91.14}
+        ipv4_address: ${SOFASCORE_SYNC_UPSTREAM_IP:-172.30.91.15}
     logging: *bounded-logging

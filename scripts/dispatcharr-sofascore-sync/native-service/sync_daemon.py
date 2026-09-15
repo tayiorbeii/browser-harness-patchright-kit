@@ -2,28 +2,30 @@
 
 Runs as its OWN small container on blackpearl.local, on the same Docker
 network as rive-resolver -- no Mac, no browser-harness, no launchd, no SSH
-transport. This replaces the Mac-based scripts/dispatcharr-sofascore-sync/
-sofascore_sync.py + run_sofascore_sync.sh + launchd job for production use;
-that Mac-based path stays useful for interactive dry-run debugging, but the
-thing that actually has to run every 15 minutes, unattended, forever,
-should live where the rest of the stack lives.
+transport. This replaces the Mac-based
+scripts/dispatcharr-sofascore-sync/sofascore_sync.py + run_sofascore_sync.sh
++ launchd job for production use; that Mac-based path stays useful for
+interactive dry-run debugging, but the thing that actually has to run every
+15 minutes, unattended, forever, should live where the rest of the stack
+lives.
 
-Why this can just use plain Playwright (no Patchright / stealth needed):
-sofascore.com's public pages are not aggressively bot-gated -- the earlier
-prototype confirmed api.sofascore.com 403s a raw Python HTTP client
-(urllib) even with a realistic User-Agent/Referer, which is a Cloudflare
-TLS-fingerprint gate on that API host, not a headless-detection gate on the
-page itself. Any real browser engine's own network stack (fetch() called
-from a loaded page, via page.evaluate()) presents a legitimate browser TLS
-fingerprint and clears it -- that was true for Patchright in the original
-prototype and is expected to hold for plain Playwright Chromium here too,
-since both use Chromium's real network stack for in-page fetch(). Verify
-this assumption on first deploy (see native-service/README section in the
-parent README.md) before trusting the loop unattended.
+Deliberately does NOT import playwright/patchright in this process. The
+actual browser lives in a separate sidecar container (../browser/, the
+same Dockerfile + launch_patchright_cdp.py this project already uses for
+interactive browser-harness work), which uses Patchright internally only
+to launch Chromium and expose a Chrome DevTools Protocol endpoint. This
+process is a pure CDP client (cdp_client.py, stdlib + the small
+websocket-client package) -- no browser binaries, no heavy image, and no
+"does this base image actually ship the playwright pip package" surprises.
 
-Base image: mcr.microsoft.com/playwright/python -- the SAME image
-rive-resolver itself is built from (see rive-resolver/Dockerfile), so
-Playwright + Chromium are already present; nothing extra to install.
+Why a real browser is needed at all: api.sofascore.com 403s a raw Python
+HTTP client (urllib) even with a realistic User-Agent/Referer -- a
+Cloudflare TLS-fingerprint gate on that API host, not a headless-detection
+gate on the page itself. A real browser's own network stack (fetch()
+called from a loaded page, via Runtime.evaluate) presents a legitimate
+browser TLS fingerprint and clears it -- verified live against production
+sofascore.com data, both via Patchright (original Mac-based prototype) and
+plain Playwright (local smoke test before this CDP rewrite).
 """
 from __future__ import annotations
 
@@ -37,7 +39,7 @@ import unicodedata
 import urllib.error
 import urllib.request
 
-from playwright.sync_api import sync_playwright
+from cdp_client import CDPClient, CDPPage, CDPError
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,7 +53,9 @@ logger = logging.getLogger("sofascore-sync")
 RESOLVER_BASE_URL = os.environ.get("RIVE_RESOLVER_BASE_URL", "http://rive-resolver:8787")
 ADMIN_TOKEN = os.environ.get("RIVE_ADMIN_TOKEN", "").strip()
 RUN_INTERVAL_SECONDS = int(os.environ.get("SYNC_INTERVAL_SECONDS", "900"))
-APPLY = os.environ.get("SOFASCORE_SYNC_APPLY", "1").strip().lower() in ("1", "true", "yes")
+APPLY = os.environ.get("SOFASCORE_SYNC_APPLY", "0").strip().lower() in ("1", "true", "yes")
+BROWSER_CDP_URL = os.environ.get("BROWSER_CDP_URL", "http://sofascore-browser:9222")
+HEARTBEAT_PATH = os.environ.get("HEARTBEAT_PATH", "/tmp/sofascore-sync.heartbeat")
 
 MIN_AGE_MINUTES = 70
 MAX_LOOKUP_MINUTES = 24 * 60
@@ -154,24 +158,25 @@ def sport_slug_for_category(category: str) -> str | None:
     return SPORT_SLUG_BY_LABEL.get(label)
 
 
-# ---- sofascore lookups (browser-context fetch; see module docstring) --
+# ---- sofascore lookups, via CDP Runtime.evaluate (see module docstring) --
 
 
-def _sofascore_fetch(page, url: str, retries: int = 2) -> dict | None:
-    expr = """async (u) => {
-        try {
-            const r = await fetch(u, { headers: { accept: 'application/json' } });
-            if (!r.ok) return JSON.stringify({ __status: r.status });
-            const j = await r.json();
-            return JSON.stringify(j);
-        } catch (e) {
-            return JSON.stringify({ __error: String(e) });
-        }
-    }"""
+def _sofascore_fetch(page: CDPPage, url: str, retries: int = 2) -> dict | None:
+    expr = (
+        "(async () => { try { const r = await fetch(%s, "
+        "{headers: {accept: 'application/json'}}); "
+        "if (!r.ok) return JSON.stringify({__status: r.status}); "
+        "const j = await r.json(); return JSON.stringify(j); } "
+        "catch (e) { return JSON.stringify({__error: String(e)}); } })()"
+    ) % json.dumps(url)
     last_err = None
     for _ in range(retries + 1):
         try:
-            raw = page.evaluate(expr, url)
+            raw = page.evaluate(expr, await_promise=True)
+            if raw is None:
+                last_err = "null result"
+                time.sleep(1.0)
+                continue
             parsed = json.loads(raw)
             if isinstance(parsed, dict) and "__error" in parsed:
                 last_err = parsed["__error"]
@@ -180,14 +185,14 @@ def _sofascore_fetch(page, url: str, retries: int = 2) -> dict | None:
             if isinstance(parsed, dict) and parsed.get("__status") == 404:
                 return None
             return parsed
-        except Exception as exc:  # noqa: BLE001
+        except (CDPError, Exception) as exc:  # noqa: BLE001
             last_err = str(exc)
             time.sleep(1.0)
     logger.warning("sofascore fetch failed for %s: %s", url, last_err)
     return None
 
 
-def search_teams(page, cache: dict, name: str, sport_slug: str) -> list[dict]:
+def search_teams(page: CDPPage, cache: dict, name: str, sport_slug: str) -> list[dict]:
     cache_key = "%s::%s" % (sport_slug, name.lower())
     if cache_key in cache:
         return cache[cache_key]
@@ -207,7 +212,7 @@ def search_teams(page, cache: dict, name: str, sport_slug: str) -> list[dict]:
     return out
 
 
-def team_events(page, cache: dict, team_id: int) -> list[dict]:
+def team_events(page: CDPPage, cache: dict, team_id: int) -> list[dict]:
     if team_id in cache:
         return cache[team_id]
     events: list[dict] = []
@@ -224,7 +229,7 @@ def team_events(page, cache: dict, team_id: int) -> list[dict]:
 
 
 def find_finished_match(
-    page, search_cache: dict, events_cache: dict,
+    page: CDPPage, search_cache: dict, events_cache: dict,
     team_a: str, team_b: str, sport_slug: str, approx_start: float | None,
 ) -> dict | None:
     for search_name, other_name in ((team_a, team_b), (team_b, team_a)):
@@ -249,7 +254,7 @@ def find_finished_match(
 # ---- one sync cycle -----------------------------------------------------
 
 
-def run_once(page) -> None:
+def run_once(page: CDPPage) -> None:
     try:
         events = fetch_tracked_events()
     except Exception as exc:  # noqa: BLE001
@@ -307,7 +312,18 @@ def run_once(page) -> None:
         else:
             logger.info("dry-run (SOFASCORE_SYNC_APPLY=0) -- not writing override")
 
-    logger.info("cycle complete: tracked=%d candidates=%d marked_ended=%d", len(events), len(candidates), ended)
+    logger.info(
+        "cycle complete: tracked=%d candidates=%d marked_ended=%d",
+        len(events), len(candidates), ended,
+    )
+
+
+def _touch_heartbeat() -> None:
+    try:
+        with open(HEARTBEAT_PATH, "w") as f:
+            f.write(str(time.time()))
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def main() -> int:
@@ -316,46 +332,33 @@ def main() -> int:
         return 2
 
     logger.info(
-        "starting: resolver=%s interval=%ds apply=%s",
-        RESOLVER_BASE_URL, RUN_INTERVAL_SECONDS, APPLY,
+        "starting: resolver=%s browser_cdp=%s interval=%ds apply=%s",
+        RESOLVER_BASE_URL, BROWSER_CDP_URL, RUN_INTERVAL_SECONDS, APPLY,
     )
-
-    heartbeat_path = os.environ.get("HEARTBEAT_PATH", "/tmp/sofascore-sync.heartbeat")
-    def _touch_heartbeat() -> None:
-        try:
-            with open(heartbeat_path, "w") as f:
-                f.write(str(time.time()))
-        except Exception:
-            pass
     _touch_heartbeat()
 
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"],
-        )
+    while True:
+        cycle_start = time.time()
+        client = None
+        page = None
         try:
-            while True:
-                cycle_start = time.time()
-                context = None
-                try:
-                    context = browser.new_context()
-                    page = context.new_page()
-                    page.goto("https://www.sofascore.com/", wait_until="load", timeout=30000)
-                    run_once(page)
-                except Exception:  # noqa: BLE001
-                    logger.exception("sync cycle failed -- will retry next interval")
-                finally:
-                    if context is not None:
-                        context.close()
-                    _touch_heartbeat()
-                elapsed = time.time() - cycle_start
-                sleep_for = max(5.0, RUN_INTERVAL_SECONDS - elapsed)
-                logger.info("sleeping %.0fs until next cycle", sleep_for)
-                time.sleep(sleep_for)
+            client = CDPClient(BROWSER_CDP_URL)
+            page = CDPPage.open(client, "about:blank")
+            page.navigate("https://www.sofascore.com/", timeout=30.0)
+            run_once(page)
+        except Exception:  # noqa: BLE001
+            logger.exception("sync cycle failed -- will retry next interval")
         finally:
-            browser.close()
+            if page is not None:
+                page.close()
+            if client is not None:
+                client.close()
+            _touch_heartbeat()
+
+        elapsed = time.time() - cycle_start
+        sleep_for = max(5.0, RUN_INTERVAL_SECONDS - elapsed)
+        logger.info("sleeping %.0fs until next cycle", sleep_for)
+        time.sleep(sleep_for)
 
 
 if __name__ == "__main__":
