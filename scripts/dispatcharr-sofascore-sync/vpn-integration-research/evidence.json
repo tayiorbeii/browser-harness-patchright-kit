@@ -1,0 +1,179 @@
+{
+  "run": {
+    "task": "Route only sofascore-browser's egress through Windscribe VPN on blackpearl.local (Unraid, docker-compose)",
+    "method": "manual octocode CLI evidence loop (ghSearch + cache fetch materialization + gh repo view), 2026-09-15",
+    "precursor": "automated research-orchestrator run was inconclusive (inconclusive-run1/); its probe derivation selected irrelevant repos",
+    "materialized_commits": {
+      "passteque/gluetun": "56a3da306a1b70c1395ab4988d60cdd3cf125b9b",
+      "qdm12/gluetun-wiki": "888ab89a61433de6561bf60e5af52d99374f48b1",
+      "compose-spec/compose-spec": "ed4c08a68f548225188988ebee9ee00c5c7f120a",
+      "linuxserver/docker-wireguard": "fee041b381ffd4aad263410980bdce0cdf4beb7d",
+      "Haxxnet/Compose-Examples": "0669e4111ffc5d7b0e3f3770cf1f1f12c020e0bf"
+    }
+  },
+  "claims": [
+    {
+      "id": "A1",
+      "claim": "gluetun has first-class Windscribe WireGuard support with documented env vars",
+      "confidence": "high",
+      "evidence": [
+        {
+          "source": "qdm12/gluetun-wiki @ 888ab89",
+          "path": "setup/providers/windscribe.md",
+          "lines": "15-23",
+          "excerpt": "# Wireguard / docker run ... -e VPN_SERVICE_PROVIDER=windscribe -e VPN_TYPE=wireguard -e WIREGUARD_PRIVATE_KEY=... -e WIREGUARD_ADDRESSES=\"10.64.222.21/32\" -e WIREGUARD_PRESHARED_KEY= -e SERVER_REGIONS=Netherlands"
+        },
+        {
+          "source": "qdm12/gluetun-wiki @ 888ab89",
+          "path": "setup/providers/windscribe.md",
+          "lines": "25-41",
+          "excerpt": "compose service block: gluetun / image: qmcgaw/gluetun / cap_add: NET_ADMIN / devices: /dev/net/tun + the same WIREGUARD_* envs"
+        },
+        {
+          "source": "qdm12/gluetun-wiki @ 888ab89",
+          "path": "setup/providers/windscribe.md",
+          "lines": "43-46, 64-65",
+          "excerpt": "Required env: VPN_SERVICE_PROVIDER=windscribe; Build-a-Plan subscriptions need SERVER_REGIONS; WIREGUARD_ENDPOINT_PORT allowed values: 53, 80, 123, 443, 1194, 65142"
+        }
+      ]
+    },
+    {
+      "id": "A2",
+      "claim": "network_mode: service:<name> is the official pattern to attach one container to gluetun; spec forbids combining it with networks:",
+      "confidence": "high",
+      "evidence": [
+        {
+          "source": "qdm12/gluetun-wiki @ 888ab89",
+          "path": "setup/connect-a-container-to-gluetun.md",
+          "lines": "9-21",
+          "excerpt": "Same compose: 'Add network_mode: \"service:gluetun\" to your second container so that it uses the gluetun network stack.' External: network_mode: \"container:gluetun\". 'There is no need for depends_on.'"
+        },
+        {
+          "source": "compose-spec/compose-spec @ ed4c08a",
+          "path": "05-services.md",
+          "lines": "1283-1299",
+          "excerpt": "network_mode sets a service container's network mode ... service:{name}: Gives the service container access to the specified service only ... When set, the networks attribute is not allowed and Compose rejects any Compose file containing both attributes."
+        }
+      ]
+    },
+    {
+      "id": "A3",
+      "claim": "gluetun has a built-in default-on firewall kill switch, configurable input/outbound rules",
+      "confidence": "high",
+      "evidence": [
+        {
+          "source": "passteque/gluetun @ 56a3da3",
+          "path": "README.md",
+          "lines": "74",
+          "excerpt": "Built in firewall kill switch to allow traffic only with needed the VPN servers and LAN devices"
+        },
+        {
+          "source": "passteque/gluetun @ 56a3da3",
+          "path": "internal/configuration/settings/firewall.go",
+          "lines": "118-135",
+          "excerpt": "FIREWALL_VPN_INPUT_PORTS (119), FIREWALL_INPUT_PORTS (124), FIREWALL_OUTBOUND_SUBNETS retro EXTRA_SUBNETS (129-130), FIREWALL_ENABLED_DISABLING_IT_SHOOTS_YOU_IN_YOUR_FOOT (135)"
+        }
+      ]
+    },
+    {
+      "id": "A4",
+      "claim": "gluetun runs its own DNS resolver inside its netns (tunnel-consistent DNS) and ships a health server + tunnel restart-on-failure",
+      "confidence": "high",
+      "evidence": [
+        {
+          "source": "passteque/gluetun @ 56a3da3",
+          "path": "internal/configuration/settings/dns.go",
+          "lines": "260-319",
+          "excerpt": "DNS_SERVER (retro DOT), DNS_UPSTREAM_RESOLVER_TYPE, DNS_PLAINTEXT_ADDRESS, DNS_CACHING, DNS_UPDATE_PERIOD - unbound-based resolver settings"
+        },
+        {
+          "source": "passteque/gluetun @ 56a3da3",
+          "path": "internal/configuration/settings/health.go",
+          "lines": "87, 122-135",
+          "excerpt": "ServerAddress default 127.0.0.1:9999; HEALTH_SERVER_ADDRESS, HEALTH_TARGET_ADDRESSES, HEALTH_ICMP_TARGET_IPS, HEALTH_RESTART_VPN ('Restart VPN on healthcheck failure')"
+        }
+      ]
+    },
+    {
+      "id": "A5",
+      "claim": "Real-world production compose examples attach tunnelled apps via network_mode and publish their ports through gluetun",
+      "confidence": "high",
+      "evidence": [
+        {
+          "source": "Haxxnet/Compose-Examples @ 0669e41",
+          "path": "examples/arr-suite/docker-compose.yml",
+          "lines": "174-216",
+          "excerpt": "gluetun: image qmcgaw/gluetun, container_name arr-suite-gluetun, cap_add NET_ADMIN, ports 8080:8080 (qbittorrent web UI) ... qbittorrent: network_mode: container:arr-suite-gluetun # use the gluetun container network (vpn killswitch)"
+        }
+      ]
+    },
+    {
+      "id": "B1",
+      "claim": "Option (b) Windscribe CLI in-container has no official image; third-party wrappers are stale",
+      "confidence": "medium-high",
+      "evidence": [
+        {
+          "source": "gh search code (filename:Dockerfile, keyword windscribe), 2026-09-15",
+          "path": "(multiple repos)",
+          "lines": "-",
+          "excerpt": "wiorca/docker-windscribe (30 stars, pushed 2022-09-22, verified via gh repo view), BlkLeg/CircuitBreaker, dumbasPL/windscribe-ephemeral-port-torrent, Kabe0/deluge-windscribe, jay-to-the-dee/Windscribe-HTTPproxy-dockerized - all community, none official Windscribe"
+        }
+      ]
+    },
+    {
+      "id": "C1",
+      "claim": "Option (c) plain WireGuard sidecar is viable (client conf drop-in) but requires hand-rolled kill switch/DNS/LAN-route handling",
+      "confidence": "high",
+      "evidence": [
+        {
+          "source": "linuxserver/docker-wireguard @ fee041b",
+          "path": "README.md",
+          "lines": "60, 68, 82, 98-106, 146-148",
+          "excerpt": "server or client based on params; PEERS unset => client mode: drop .conf into /config/wg_confs; 'When routing via Wireguard from another container using the service option ... you might lose access to the containers webUI locally' with PostUp/PreDown LAN route workaround; cap_add NET_ADMIN, optional SYS_MODULE"
+        }
+      ]
+    },
+    {
+      "id": "D1",
+      "claim": "Option (d) Unraid-specific: no official Windscribe Unraid template; Unraid path collapses into running gluetun as a normal Docker container",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "source": "repository/code searches for windscribe+unraid templates, 2026-09-15",
+          "path": "-",
+          "lines": "-",
+          "excerpt": "No Windscribe Community Applications template found (empty results)"
+        },
+        {
+          "source": "passteque/gluetun @ 56a3da3",
+          "path": "README.md",
+          "lines": "46",
+          "excerpt": "Fix the Unraid template - https://github.com/passteque/gluetun/discussions/550 (Unraid runs gluetun as a normal container)"
+        }
+      ]
+    },
+    {
+      "id": "N1",
+      "claim": "The canonical gluetun repo has moved: qmcgaw/gluetun now returns 404; current code home is passteque/gluetun (image name qmcgaw/gluetun still used in wiki/examples)",
+      "confidence": "high",
+      "evidence": [
+        {
+          "source": "gh api repos/qmcgaw/gluetun, 2026-09-15",
+          "path": "-",
+          "lines": "-",
+          "excerpt": "{\"message\": \"Not Found\", \"status\": \"404\"}; gh search repos gluetun -> passteque/gluetun (15506 stars)"
+        }
+      ]
+    }
+  ],
+  "stack_specific_facts": {
+    "compose_files": [
+      "/mnt/user/appdata/unified-iptv/stack/docker-compose.unified.phase1.candidate.yml",
+      "/mnt/user/appdata/unified-iptv/stack/docker-compose.unified.operator-access.yml"
+    ],
+    "target_service": "sofascore-browser",
+    "sync_service": "sofascore-sync (unchanged; BROWSER_CDP_URL keeps pointing at 172.30.91.14:9222, which becomes gluetun's upstream IP)",
+    "network": "upstream (external/shared), subnet 172.30.91.0/24; .10 rive-resolver, .11 tuliprox, .12 dispatcharr, .13 dispatcharr-celery, .14 currently sofascore-browser -> moves to the vpn gateway",
+    "cdp_contract": "sofascore-sync reaches CDP at http://172.30.91.14:9222; browser healthcheck uses 127.0.0.1:9222 inside the shared netns (still valid)"
+  }
+}
