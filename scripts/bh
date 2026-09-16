@@ -6,7 +6,11 @@ if [[ $# -gt 0 ]]; then
   shift || true
 fi
 
-project_root="${BH_PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+# Resolve the kit root from this script's own location, never from the caller's
+# cwd: `git rev-parse` would otherwise return the repo the user happens to be in
+# and the wrapper would look for .browser-harness.env in the wrong place.
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+project_root="${BH_PROJECT_ROOT:-$(cd -- "$script_dir/.." && pwd)}"
 config_file="$project_root/.browser-harness.env"
 
 docs_failure="docs/06-testing-and-acceptance.md#failure-modes-and-fixes"
@@ -131,7 +135,7 @@ cdp_ws=""
 bh_env=()
 
 usage() {
-  echo "Usage: $0 {run|url|status|reload|stop|purge|logs|shell} [browser-harness args]" >&2
+  echo "Usage: $0 {run|env|url|status|reload|stop|purge|logs|shell} [browser-harness args]" >&2
 }
 
 fail() {
@@ -400,6 +404,7 @@ create_container() {
     --name "$BH_CONTAINER_NAME" \
     "${platform_args[@]}" \
     --init \
+    --restart unless-stopped \
     "${extra_args[@]}" \
     -p "127.0.0.1:${BH_HOST_PORT}:9222" \
     "${vnc_args[@]}" \
@@ -538,6 +543,16 @@ case "$cmd" in
     reload_daemon_if_config_changed
     build_bh_env
     exec env "${bh_env[@]}" browser-harness "$@"
+    ;;
+
+  env)
+    # `eval "$(./scripts/bh env)"` gives a shell the exact harness environment,
+    # which is what a bare `browser-harness` call needs (BU_CDP_URL lives here).
+    launch_browser
+    build_bh_env
+    for kv in "${bh_env[@]}"; do
+      printf 'export %s=%q\n' "${kv%%=*}" "${kv#*=}"
+    done
     ;;
 
   url)

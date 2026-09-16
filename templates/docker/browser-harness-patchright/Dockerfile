@@ -90,3 +90,9 @@ EXPOSE 9222 5900
 #   behavior differs, so keep that opt-in outside the image.
 
 CMD ["python", "/app/launch_patchright_cdp.py"]
+
+# Docker cannot see the browser inside the container, so a crashed Chrome used to
+# leave the container reporting "running" while the CDP port was dead. Probe the
+# endpoint the launcher publishes so the state is honest to operators and agents.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
+    CMD curl -fsS "http://127.0.0.1:${CDP_PORT}/json/version" >/dev/null || exit 1

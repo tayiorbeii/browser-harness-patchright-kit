@@ -197,9 +197,20 @@ def start_tcp_proxy(listen_port: int, target_port: int) -> socket.socket:
         while True:
             try:
                 client, _ = server.accept()
-                target = socket.create_connection((CHROME_CDP_HOST, target_port))
             except OSError:
                 break
+            try:
+                target = socket.create_connection((CHROME_CDP_HOST, target_port))
+            except OSError:
+                # Chrome is down or still restarting. Drop this client only: breaking
+                # out here would permanently wedge the published port, so that even a
+                # successfully relaunched browser stayed unreachable from outside.
+                try:
+                    client.close()
+                except OSError:
+                    pass
+                time.sleep(0.25)
+                continue
             threading.Thread(target=pipe_socket, args=(client, target), daemon=True).start()
             threading.Thread(target=pipe_socket, args=(target, client), daemon=True).start()
 
@@ -235,6 +246,38 @@ def wait_for_cdp(port: int, timeout_s: int = 30) -> None:
     raise RuntimeError(f"CDP did not become ready at {probe_url}: {last_error}")
 
 
+# Chrome can die while the launcher keeps idling, which leaves the container
+# "running" with a dead CDP port and makes every browser client fail for reasons
+# of its own. Probe the endpoint and recycle the browser when it stops answering.
+BROWSER_PROBE_INTERVAL_S = 5.0
+BROWSER_PROBE_MISSES = 3
+BROWSER_RELAUNCH_LIMIT = 5
+
+
+def clear_stale_profile_locks() -> None:
+    """Drop singleton locks left behind by a crashed Chrome.
+
+    This profile volume belongs only to this project container, so a lock with no
+    live browser behind it would otherwise block a safe restart.
+    """
+    for stale_lock in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
+        try:
+            (USER_DATA_DIR / stale_lock).unlink()
+        except FileNotFoundError:
+            pass
+
+
+def cdp_alive(port: int) -> bool:
+    """True while the local Chrome DevTools endpoint still answers."""
+    try:
+        with urllib.request.urlopen(
+            f"http://{CHROME_CDP_HOST}:{port}/json/version", timeout=2
+        ):
+            return True
+    except Exception:
+        return False
+
+
 def main() -> int:
     cdp_port = int(os.environ.get("CDP_PORT", "9222"))
     chrome_cdp_port = int(os.environ.get("CHROME_CDP_PORT", str(cdp_port + 1)))
@@ -249,11 +292,7 @@ def main() -> int:
     # This profile volume belongs only to this project container. If Chrome or
     # emulated Chrome crashed previously, stale singleton locks can block a safe
     # restart even though no browser process exists in the fresh container.
-    for stale_lock in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
-        try:
-            (USER_DATA_DIR / stale_lock).unlink()
-        except FileNotFoundError:
-            pass
+    clear_stale_profile_locks()
 
     display_server = start_display_server(headless)
     context = None
@@ -285,35 +324,78 @@ def main() -> int:
         else:
             launch_options["channel"] = browser_channel or "chrome"
 
-        context = playwright.chromium.launch_persistent_context(
-            user_data_dir=str(USER_DATA_DIR),
-            **launch_options,
-            headless=headless,
-            no_viewport=True,
-            accept_downloads=True,
-            downloads_path=str(DOWNLOADS_DIR),
-            chromium_sandbox=env_bool("CHROMIUM_SANDBOX", False),
-            args=launch_args,
-        )
-
-        if not context.pages:
-            context.new_page()
-
-        wait_for_cdp(chrome_cdp_port)
-        proxy = start_tcp_proxy(cdp_port, chrome_cdp_port)
-        print(
-            json.dumps(
-                {
-                    "status": "proxy",
-                    "cdp": f"http://{CDP_HOST}:{cdp_port}",
-                    "target": f"http://{CHROME_CDP_HOST}:{chrome_cdp_port}",
-                }
-            ),
-            flush=True,
-        )
-
+        proxy = None
+        attempts = 0
         while True:
-            time.sleep(3600)
+            attempts += 1
+            context = None
+            try:
+                clear_stale_profile_locks()
+                context = playwright.chromium.launch_persistent_context(
+                    user_data_dir=str(USER_DATA_DIR),
+                    **launch_options,
+                    headless=headless,
+                    no_viewport=True,
+                    accept_downloads=True,
+                    downloads_path=str(DOWNLOADS_DIR),
+                    chromium_sandbox=env_bool("CHROMIUM_SANDBOX", False),
+                    args=launch_args,
+                )
+
+                if not context.pages:
+                    context.new_page()
+
+                wait_for_cdp(chrome_cdp_port)
+
+                # The proxy lives for the container lifetime and opens a fresh upstream
+                # connection per client, so it survives browser relaunches.
+                if proxy is None:
+                    proxy = start_tcp_proxy(cdp_port, chrome_cdp_port)
+
+                print(
+                    json.dumps(
+                        {
+                            "status": "browser-ready",
+                            "attempt": attempts,
+                            "cdp": f"http://{CDP_HOST}:{cdp_port}",
+                            "target": f"http://{CHROME_CDP_HOST}:{chrome_cdp_port}",
+                        }
+                    ),
+                    flush=True,
+                )
+
+                misses = 0
+                while misses < BROWSER_PROBE_MISSES:
+                    time.sleep(BROWSER_PROBE_INTERVAL_S)
+                    if cdp_alive(chrome_cdp_port):
+                        misses = 0
+                    else:
+                        misses += 1
+                        print(
+                            json.dumps({"status": "browser-probe-failed", "misses": misses}),
+                            flush=True,
+                        )
+                print(json.dumps({"status": "browser-lost", "attempt": attempts}), flush=True)
+            except Exception as exc:
+                print(
+                    json.dumps({"status": "browser-error", "error": str(exc)[:200]}),
+                    flush=True,
+                )
+            finally:
+                try:
+                    if context is not None:
+                        context.close()
+                except Exception:
+                    pass
+
+            if attempts >= BROWSER_RELAUNCH_LIMIT:
+                print(json.dumps({"status": "giving-up", "attempts": attempts}), flush=True)
+                break
+            time.sleep(2)
+
+    # Exit non-zero so the container restart policy recreates it with a clean X
+    # server, profile lock and CDP proxy.
+    return 1
 
 
 if __name__ == "__main__":
