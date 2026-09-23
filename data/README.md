@@ -27,3 +27,21 @@ The script resumes complete week records and atomically rewrites the JSONL after
 - ESPN's displayed correctness agreed with the scoreboard-derived result for every pick with a unique outcome.
 - One pick is blank: Matt Bowen, 2023 Week 10, TEN at TB. Green Bay–Dallas ended in a 40–40 tie in 2025 Week 4; its winner and all experts' `correct` values are null.
 - Spread data is present for all 816 games, but available providers and historical fields differ by game. Where an explicit `open`/`close` pair is absent, do not interpret `preMatch` or a provider's current field as a closing line without additional source verification.
+
+## Confidence-pool simulation
+
+Run the deterministic simulation with:
+
+```sh
+python3 scripts/simulate_espn_confidence.py
+```
+
+The simulation assigns one confidence value per game, starting at 16 and descending, even on bye weeks: a 13-game slate receives 16 through 4; a 16-game slate receives 16 through 1. For each expert, picked favorites sort first by larger favorite spread, then higher moneyline-implied probability. Picked underdogs follow, ordered from the smallest dog spread to the largest; moneyline probability breaks equal-spread ties. Pick-em games follow favorites and precede underdogs. Missing picks are last and earn zero. Correct picks earn their assigned value; incorrect, tied, and missing picks earn zero.
+
+Market selection is consensus when present, otherwise ESPN BET, otherwise the median of unique non-live provider spreads. One game (PIT at DEN, 2024 Week 2) had only a live-labeled market and uses that as an explicitly marked last resort. This is a heuristic simulation, not a reconstruction of experts' submitted confidence rankings or exact sportsbook snapshots at pick time.
+
+Outputs:
+
+- `espn-confidence-simulation-2023-2025.jsonl`: per-week games, selected market provenance, each expert's assigned confidence points, and weekly scoring.
+- `espn-confidence-weekly-scores-2023-2025.csv`: weekly and cumulative expert standings.
+- `espn-confidence-final-standings-2023-2025.csv`: final standings per season.
