@@ -5,7 +5,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, call, patch
 
 
 sys.modules.setdefault("patchright", types.ModuleType("patchright"))
@@ -21,6 +21,54 @@ SPEC.loader.exec_module(launcher)
 
 
 class LauncherRecoveryTests(unittest.TestCase):
+    def test_download_behavior_allows_browser_managed_downloads(self) -> None:
+        controller = launcher.RemoteDownloadController(9223)
+        controller.browser_context_id = "context-1"
+        controller.send = MagicMock()
+
+        controller.apply()
+
+        controller.send.assert_called_once_with(
+            "Browser.setDownloadBehavior",
+            {
+                "behavior": "allow",
+                "downloadPath": str(launcher.DOWNLOADS_DIR),
+                "eventsEnabled": True,
+                "browserContextId": "context-1",
+            },
+        )
+
+    def test_download_controls_are_applied_for_each_browser_lifetime(self) -> None:
+        playwright = MagicMock()
+        first_context = MagicMock(pages=[object()])
+        second_context = MagicMock(pages=[object()])
+        playwright.chromium.launch_persistent_context.side_effect = [
+            first_context,
+            second_context,
+        ]
+        first_controller = MagicMock()
+        second_controller = MagicMock()
+
+        with (
+            patch.object(launcher, "wait_for_cdp") as wait_for_cdp,
+            patch.object(
+                launcher,
+                "RemoteDownloadController",
+                side_effect=[first_controller, second_controller],
+            ) as controller_type,
+        ):
+            first = launcher.launch_browser_lifetime(playwright, {}, False, ["--one"], 9223)
+            second = launcher.launch_browser_lifetime(playwright, {}, False, ["--two"], 9223)
+
+        self.assertEqual(first, (first_context, first_controller))
+        self.assertEqual(second, (second_context, second_controller))
+        self.assertEqual(wait_for_cdp.call_args_list, [call(9223), call(9223)])
+        self.assertEqual(controller_type.call_args_list, [call(9223), call(9223)])
+        first_controller.connect.assert_called_once_with()
+        second_controller.connect.assert_called_once_with()
+        for launch_call in playwright.chromium.launch_persistent_context.call_args_list:
+            self.assertIs(launch_call.kwargs["accept_downloads"], False)
+
     def test_websocket_frame_is_masked_and_round_trips(self) -> None:
         payload = b'{"id":1}'
 

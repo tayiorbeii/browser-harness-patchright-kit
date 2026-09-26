@@ -441,7 +441,7 @@ BROWSER_PROBE_INTERVAL_S = 5.0
 BROWSER_PROBE_MISSES = 3
 BROWSER_RELAUNCH_LIMIT = 5
 BROWSER_RELAUNCH_GRACE_S = 60.0
-DOWNLOAD_BEHAVIOR_REFRESH_S = 1.0
+BROWSER_LOOP_INTERVAL_S = 1.0
 
 
 def clear_stale_profile_locks() -> None:
@@ -541,6 +541,37 @@ def next_failure_count(current: int, browser_uptime_s: float | None) -> int:
     return current + 1
 
 
+def launch_browser_lifetime(
+    playwright: object,
+    launch_options: dict[str, object],
+    headless: bool,
+    launch_args: list[str],
+    chrome_cdp_port: int,
+) -> tuple[object, RemoteDownloadController]:
+    """Launch one browser and install its download policy before use."""
+    context = playwright.chromium.launch_persistent_context(
+        user_data_dir=str(USER_DATA_DIR),
+        **launch_options,
+        headless=headless,
+        no_viewport=True,
+        accept_downloads=False,
+        downloads_path=str(DOWNLOADS_DIR),
+        chromium_sandbox=env_bool("CHROMIUM_SANDBOX", False),
+        args=launch_args,
+    )
+    try:
+        if not context.pages:
+            context.new_page()
+
+        wait_for_cdp(chrome_cdp_port)
+        download_controller = RemoteDownloadController(chrome_cdp_port)
+        download_controller.connect()
+        return context, download_controller
+    except Exception:
+        context.close()
+        raise
+
+
 def main() -> int:
     cdp_port = int(os.environ.get("CDP_PORT", "9222"))
     chrome_cdp_port = int(os.environ.get("CHROME_CDP_PORT", str(cdp_port + 1)))
@@ -597,23 +628,13 @@ def main() -> int:
             download_controller: RemoteDownloadController | None = None
             try:
                 clear_stale_profile_locks()
-                context = playwright.chromium.launch_persistent_context(
-                    user_data_dir=str(USER_DATA_DIR),
-                    **launch_options,
-                    headless=headless,
-                    no_viewport=True,
-                    accept_downloads=False,
-                    downloads_path=str(DOWNLOADS_DIR),
-                    chromium_sandbox=env_bool("CHROMIUM_SANDBOX", False),
-                    args=launch_args,
+                context, download_controller = launch_browser_lifetime(
+                    playwright,
+                    launch_options,
+                    headless,
+                    launch_args,
+                    chrome_cdp_port,
                 )
-
-                if not context.pages:
-                    context.new_page()
-
-                wait_for_cdp(chrome_cdp_port)
-                download_controller = RemoteDownloadController(chrome_cdp_port)
-                download_controller.connect()
                 browser_ready_at = time.monotonic()
                 browser_monitor = BrowserProcessMonitor(find_browser_pid(USER_DATA_DIR))
                 browser_monitor.start()
@@ -639,16 +660,8 @@ def main() -> int:
                 misses = 0
                 last_probe_at = time.monotonic()
                 while misses < BROWSER_PROBE_MISSES:
-                    time.sleep(DOWNLOAD_BEHAVIOR_REFRESH_S)
+                    time.sleep(BROWSER_LOOP_INTERVAL_S)
                     alive = cdp_alive(chrome_cdp_port)
-                    if alive:
-                        try:
-                            download_controller.apply()
-                        except Exception as exc:
-                            print(
-                                json.dumps({"status": "download-behavior-error", "error": str(exc)[:200]}),
-                                flush=True,
-                            )
                     if time.monotonic() - last_probe_at < BROWSER_PROBE_INTERVAL_S:
                         continue
                     last_probe_at = time.monotonic()
