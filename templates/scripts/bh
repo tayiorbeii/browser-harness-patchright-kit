@@ -178,6 +178,12 @@ build_bh_env() {
   if [[ -n "$cdp_ws" ]]; then
     bh_env+=("BU_CDP_WS=${cdp_ws}")
   fi
+
+  # Opt-in: never rewrite document.title with the controlled-tab marker, so
+  # pages that read their own title back (audits, reports) see the real one.
+  if [[ "${BH_NO_TAB_MARKER:-0}" == "1" ]]; then
+    bh_env+=("BU_NO_TAB_MARKER=1")
+  fi
 }
 
 run_browser_harness_env() {
