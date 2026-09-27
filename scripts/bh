@@ -116,13 +116,13 @@ PY
 fi
 
 state_dir="$project_root/.browser-harness"
-home_dir="$state_dir/home"
 project_hash="$(python3 -c 'import hashlib,sys; print(hashlib.sha1(sys.argv[1].encode()).hexdigest()[:12])' "$project_root")"
 # browser-harness uses Unix-domain sockets; long checkout paths can exceed the
-# socket path limit. Keep runtime/tmp short while profile/download state remains
-# project-scoped.
-runtime_dir="${BH_RUNTIME_DIR:-${TMPDIR:-/tmp}/bh-${project_hash}/runtime}"
-tmp_dir="${BH_TMP_DIR:-${TMPDIR:-/tmp}/bh-${project_hash}/tmp}"
+# socket path limit. Keep harness home/runtime/tmp short while profile/download
+# state remains project-scoped.
+home_dir="${BH_HOME:-/tmp/bh-${project_hash}/home}"
+runtime_dir="${BH_RUNTIME_DIR:-/tmp/bh-${project_hash}/runtime}"
+tmp_dir="${BH_TMP_DIR:-/tmp/bh-${project_hash}/tmp}"
 downloads_dir="$project_root/${BH_DOWNLOADS_DIR:-.browser-harness/downloads}"
 image_context="$project_root/docker/browser-harness-patchright"
 config_sig="${BH_IMAGE}|${BH_DOCKER_PLATFORM}|${BH_HOST_PORT}|${BH_PROFILE_VOLUME}|${downloads_dir}|${BH_DOCKER_EXTRA_ARGS:-}|${PATCHRIGHT_HEADLESS:-0}|${PATCHRIGHT_EXTRA_ARGS:-}|${PATCHRIGHT_BROWSER_EXECUTABLE:-/usr/bin/chromium}|${PATCHRIGHT_BROWSER_CHANNEL:-}|${CHROMIUM_SANDBOX:-0}|${BH_HOST_RESOLVER_RULES:-}|${BH_BROWSER_ORIGIN:-}|${BH_VNC_PORT:-}|${BH_VNC_PASSWORD_FILE:-}|${XVFB_SCREEN}"
