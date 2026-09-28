@@ -1,0 +1,1901 @@
+{
+  "runId": "run_single_docker_container_route_1789469480767",
+  "createdAt": "2026-09-15T10:51:20.767Z",
+  "goal": "Best way to route a single Docker container's network egress through a Windscribe VPN account, on a docker-compose stack running on Unraid, without affecting the other containers on the same stack. Compare: (a) a VPN gateway/sidecar container (e.g. qmcgaw/gluetun, which has documented Windscribe WireGuard support) with the target container attached via network_mode: service:<vpn-container> or container:<vpn-container>, (b) Windscribe's own official Linux CLI running inside the target container itself, (c) a WireGuard config generated from Windscribe's account and used directly with a wireguard/wg-quick sidecar, (d) Unraid-specific approaches (Unraid Docker's built-in custom network / br0 macvlan patterns, or Windscribe-specific Unraid Community Applications templates). For each, find real docker-compose.yml examples on GitHub, note exact environment variables / config file formats needed, how healthchecks and DNS resolution behave through the tunnel, and known gotchas (kill-switch behavior if the VPN drops, port/health-check reachability from sibling containers, restart-order dependencies). Recommend the one best suited for gating exactly one lightweight headless-Chromium container's egress in an existing docker-compose project, while leaving all other services on that same external/upstream docker network completely unaffected.",
+  "featureKey": "single-docker-container-route",
+  "status": "inconclusive",
+  "statusReasons": [
+    "missing_required_proof"
+  ],
+  "selectedRepos": [
+    "jenkinsci/docker",
+    "nextcloud/docker",
+    "docker-library/docker"
+  ],
+  "scoredCandidates": [
+    {
+      "repo": "jenkinsci/docker",
+      "score": 0.7,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "existence_proof",
+          "label": "existence proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_jenkinsci_docker_1",
+              "provider": "octocode",
+              "repo": "jenkinsci/docker",
+              "path": "CHANGELOG.md",
+              "startLine": 4,
+              "endLine": 4,
+              "matchText": "| See [GitHub releases](https://github.com/jenkinsci/docker/releases) |",
+              "matchedSignal": "Docker",
+              "url": "https://github.com/jenkinsci/docker/blob/main/CHANGELOG.md#L4",
+              "role": "existence_proof",
+              "proofLevel": "proved"
+            },
+            {
+              "id": "ev_jenkinsci_docker_2",
+              "provider": "octocode",
+              "repo": "jenkinsci/docker",
+              "path": "CONTRIBUTING.md",
+              "startLine": 3,
+              "endLine": 3,
+              "matchText": "Please note that only issues related to this Docker image will be addressed here.",
+              "matchedSignal": "Docker",
+              "url": "https://github.com/jenkinsci/docker/blob/main/CONTRIBUTING.md#L3",
+              "role": "existence_proof",
+              "proofLevel": "proved"
+            },
+            {
+              "id": "ev_jenkinsci_docker_3",
+              "provider": "octocode",
+              "repo": "jenkinsci/docker",
+              "path": "README.md",
+              "startLine": 1,
+              "endLine": 1,
+              "matchText": "# Official Jenkins Docker image",
+              "matchedSignal": "Docker",
+              "url": "https://github.com/jenkinsci/docker/blob/main/README.md#L1",
+              "role": "existence_proof",
+              "proofLevel": "proved"
+            },
+            {
+              "id": "ev_jenkinsci_docker_5",
+              "provider": "octocode",
+              "repo": "jenkinsci/docker",
+              "path": "SECURITY.md",
+              "startLine": 6,
+              "endLine": 6,
+              "matchText": "You can find more information in the [general Security Policy](https://github.com/jenkinsci/.github/blob/master/SECURITY.md), this policy is specific to our Docker images.",
+              "matchedSignal": "Docker",
+              "url": "https://github.com/jenkinsci/docker/blob/main/SECURITY.md#L6",
+              "role": "existence_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        },
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_jenkinsci_docker_4",
+              "provider": "octocode",
+              "repo": "jenkinsci/docker",
+              "path": "README.md",
+              "startLine": 332,
+              "endLine": 332,
+              "matchText": "To use Docker Compose with Jenkins, you can define a docker-compose.yml file including a Jenkins instance and any other services it depends on.",
+              "matchedSignal": "docker-compose",
+              "url": "https://github.com/jenkinsci/docker/blob/main/README.md#L332",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        },
+        {
+          "key": "production_shaped",
+          "label": "Repo is shaped like a real application.",
+          "weight": 10,
+          "source": "metadata",
+          "confidence": 0.7
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof:single: Each named system/project has a real repository or official documentation.",
+        "existence_proof:container: Each named system/project has a real repository or official documentation.",
+        "existence_proof:network: Each named system/project has a real repository or official documentation.",
+        "existence_proof:egress: Each named system/project has a real repository or official documentation.",
+        "existence_proof:through: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Windscribe: Each named system/project has a real repository or official documentation.",
+        "existence_proof:VPN: Each named system/project has a real repository or official documentation.",
+        "existence_proof:account: Each named system/project has a real repository or official documentation.",
+        "existence_proof:stack: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Unraid: Each named system/project has a real repository or official documentation.",
+        "existence_proof:affecting: Each named system/project has a real repository or official documentation.",
+        "existence_proof:containers: Each named system/project has a real repository or official documentation.",
+        "existence_proof:same: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "read_more"
+    },
+    {
+      "repo": "nextcloud/docker",
+      "score": 0.7,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "existence_proof",
+          "label": "existence proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_nextcloud_docker_1",
+              "provider": "octocode",
+              "repo": "nextcloud/docker",
+              "path": ".examples/README.md",
+              "startLine": 3,
+              "endLine": 3,
+              "matchText": "In this subfolders are some examples how to use the docker image. There are two sections:",
+              "matchedSignal": "Docker",
+              "url": "https://github.com/nextcloud/docker/blob/main/.examples/README.md#L3",
+              "role": "existence_proof",
+              "proofLevel": "proved"
+            },
+            {
+              "id": "ev_nextcloud_docker_3",
+              "provider": "octocode",
+              "repo": "nextcloud/docker",
+              "path": "README.md",
+              "startLine": 1,
+              "endLine": 1,
+              "matchText": "![GitHub last commit](https://img.shields.io/github/last-commit/nextcloud/docker)",
+              "matchedSignal": "Docker",
+              "url": "https://github.com/nextcloud/docker/blob/main/README.md#L1",
+              "role": "existence_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        },
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_nextcloud_docker_2",
+              "provider": "octocode",
+              "repo": "nextcloud/docker",
+              "path": ".examples/README.md",
+              "startLine": 6,
+              "endLine": 6,
+              "matchText": "* [`docker-compose`](https://github.com/nextcloud/docker/tree/master/.examples/docker-compose)",
+              "matchedSignal": "docker-compose",
+              "url": "https://github.com/nextcloud/docker/blob/main/.examples/README.md#L6",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            },
+            {
+              "id": "ev_nextcloud_docker_4",
+              "provider": "octocode",
+              "repo": "nextcloud/docker",
+              "path": "README.md",
+              "startLine": 45,
+              "endLine": 45,
+              "matchText": "- [Running this image with `docker compose`](#running-this-image-with-docker-compose)",
+              "matchedSignal": "docker-compose",
+              "url": "https://github.com/nextcloud/docker/blob/main/README.md#L45",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        },
+        {
+          "key": "production_shaped",
+          "label": "Repo is shaped like a real application.",
+          "weight": 10,
+          "source": "metadata",
+          "confidence": 0.7
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof:single: Each named system/project has a real repository or official documentation.",
+        "existence_proof:container: Each named system/project has a real repository or official documentation.",
+        "existence_proof:network: Each named system/project has a real repository or official documentation.",
+        "existence_proof:egress: Each named system/project has a real repository or official documentation.",
+        "existence_proof:through: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Windscribe: Each named system/project has a real repository or official documentation.",
+        "existence_proof:VPN: Each named system/project has a real repository or official documentation.",
+        "existence_proof:account: Each named system/project has a real repository or official documentation.",
+        "existence_proof:stack: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Unraid: Each named system/project has a real repository or official documentation.",
+        "existence_proof:affecting: Each named system/project has a real repository or official documentation.",
+        "existence_proof:containers: Each named system/project has a real repository or official documentation.",
+        "existence_proof:same: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "read_more"
+    },
+    {
+      "repo": "docker-library/docker",
+      "score": 0.6,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "existence_proof",
+          "label": "existence proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_docker-library_docker_1",
+              "provider": "octocode",
+              "repo": "docker-library/docker",
+              "path": "README.md",
+              "startLine": 1,
+              "endLine": 1,
+              "matchText": "# https://github.com/docker-library/docker",
+              "matchedSignal": "Docker",
+              "url": "https://github.com/docker-library/docker/blob/main/README.md#L1",
+              "role": "existence_proof",
+              "proofLevel": "proved"
+            },
+            {
+              "id": "ev_docker-library_docker_2",
+              "provider": "octocode",
+              "repo": "docker-library/docker",
+              "path": "versions.json",
+              "startLine": 5,
+              "endLine": 5,
+              "matchText": "\"dockerUrl\": \"https://download.docker.com/linux/static/stable/x86_64/docker-29.8.0.tgz\",",
+              "matchedSignal": "Docker",
+              "url": "https://github.com/docker-library/docker/blob/main/versions.json#L5",
+              "role": "existence_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        },
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_docker-library_docker_3",
+              "provider": "octocode",
+              "repo": "docker-library/docker",
+              "path": "versions.json",
+              "startLine": 115,
+              "endLine": 115,
+              "matchText": "\"file\": \"docker-compose-linux-x86_64\",",
+              "matchedSignal": "docker-compose",
+              "url": "https://github.com/docker-library/docker/blob/main/versions.json#L115",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof:single: Each named system/project has a real repository or official documentation.",
+        "existence_proof:container: Each named system/project has a real repository or official documentation.",
+        "existence_proof:network: Each named system/project has a real repository or official documentation.",
+        "existence_proof:egress: Each named system/project has a real repository or official documentation.",
+        "existence_proof:through: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Windscribe: Each named system/project has a real repository or official documentation.",
+        "existence_proof:VPN: Each named system/project has a real repository or official documentation.",
+        "existence_proof:account: Each named system/project has a real repository or official documentation.",
+        "existence_proof:stack: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Unraid: Each named system/project has a real repository or official documentation.",
+        "existence_proof:affecting: Each named system/project has a real repository or official documentation.",
+        "existence_proof:containers: Each named system/project has a real repository or official documentation.",
+        "existence_proof:same: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "read_more"
+    },
+    {
+      "repo": "apple/container",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "existence_proof",
+          "label": "existence proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_apple_container_1",
+              "provider": "octocode",
+              "repo": "apple/container",
+              "path": "README.md",
+              "startLine": 3,
+              "endLine": 3,
+              "matchText": "&nbsp;container",
+              "matchedSignal": "container",
+              "url": "https://github.com/apple/container/blob/main/README.md#L3",
+              "role": "existence_proof",
+              "proofLevel": "proved"
+            },
+            {
+              "id": "ev_apple_container_2",
+              "provider": "octocode",
+              "repo": "apple/container",
+              "path": "README.md",
+              "startLine": 6,
+              "endLine": 6,
+              "matchText": "`container` is a tool that you can use to create and run Linux containers as lightweight virtual machines on your Mac. It's written in Swift, and optimized for Apple silicon.",
+              "matchedSignal": "containers",
+              "url": "https://github.com/apple/container/blob/main/README.md#L6",
+              "role": "existence_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof:single: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Docker: Each named system/project has a real repository or official documentation.",
+        "existence_proof:network: Each named system/project has a real repository or official documentation.",
+        "existence_proof:egress: Each named system/project has a real repository or official documentation.",
+        "existence_proof:through: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Windscribe: Each named system/project has a real repository or official documentation.",
+        "existence_proof:VPN: Each named system/project has a real repository or official documentation.",
+        "existence_proof:account: Each named system/project has a real repository or official documentation.",
+        "existence_proof:stack: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Unraid: Each named system/project has a real repository or official documentation.",
+        "existence_proof:affecting: Each named system/project has a real repository or official documentation.",
+        "existence_proof:same: Each named system/project has a real repository or official documentation.",
+        "behavior_proof: The central behavior/concept is documented or implemented in source material."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "Dreamer-Paul/Single",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "existence_proof",
+          "label": "existence proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_Dreamer-Paul_Single_1",
+              "provider": "octocode",
+              "repo": "Dreamer-Paul/Single",
+              "path": "README.md",
+              "startLine": 1,
+              "endLine": 1,
+              "matchText": "# Single",
+              "matchedSignal": "single",
+              "url": "https://github.com/Dreamer-Paul/Single/blob/main/README.md#L1",
+              "role": "existence_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof:Docker: Each named system/project has a real repository or official documentation.",
+        "existence_proof:container: Each named system/project has a real repository or official documentation.",
+        "existence_proof:network: Each named system/project has a real repository or official documentation.",
+        "existence_proof:egress: Each named system/project has a real repository or official documentation.",
+        "existence_proof:through: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Windscribe: Each named system/project has a real repository or official documentation.",
+        "existence_proof:VPN: Each named system/project has a real repository or official documentation.",
+        "existence_proof:account: Each named system/project has a real repository or official documentation.",
+        "existence_proof:stack: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Unraid: Each named system/project has a real repository or official documentation.",
+        "existence_proof:affecting: Each named system/project has a real repository or official documentation.",
+        "existence_proof:containers: Each named system/project has a real repository or official documentation.",
+        "existence_proof:same: Each named system/project has a real repository or official documentation.",
+        "behavior_proof: The central behavior/concept is documented or implemented in source material."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "marcsauter/single",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "existence_proof",
+          "label": "existence proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_marcsauter_single_1",
+              "provider": "octocode",
+              "repo": "marcsauter/single",
+              "path": "README.md",
+              "startLine": 1,
+              "endLine": 1,
+              "matchText": "# single",
+              "matchedSignal": "single",
+              "url": "https://github.com/marcsauter/single/blob/main/README.md#L1",
+              "role": "existence_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof:Docker: Each named system/project has a real repository or official documentation.",
+        "existence_proof:container: Each named system/project has a real repository or official documentation.",
+        "existence_proof:network: Each named system/project has a real repository or official documentation.",
+        "existence_proof:egress: Each named system/project has a real repository or official documentation.",
+        "existence_proof:through: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Windscribe: Each named system/project has a real repository or official documentation.",
+        "existence_proof:VPN: Each named system/project has a real repository or official documentation.",
+        "existence_proof:account: Each named system/project has a real repository or official documentation.",
+        "existence_proof:stack: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Unraid: Each named system/project has a real repository or official documentation.",
+        "existence_proof:affecting: Each named system/project has a real repository or official documentation.",
+        "existence_proof:containers: Each named system/project has a real repository or official documentation.",
+        "existence_proof:same: Each named system/project has a real repository or official documentation.",
+        "behavior_proof: The central behavior/concept is documented or implemented in source material."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "php-fig/container",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "existence_proof",
+          "label": "existence proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_php-fig_container_1",
+              "provider": "octocode",
+              "repo": "php-fig/container",
+              "path": "README.md",
+              "startLine": 1,
+              "endLine": 1,
+              "matchText": "Container interface",
+              "matchedSignal": "container",
+              "url": "https://github.com/php-fig/container/blob/main/README.md#L1",
+              "role": "existence_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof:single: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Docker: Each named system/project has a real repository or official documentation.",
+        "existence_proof:network: Each named system/project has a real repository or official documentation.",
+        "existence_proof:egress: Each named system/project has a real repository or official documentation.",
+        "existence_proof:through: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Windscribe: Each named system/project has a real repository or official documentation.",
+        "existence_proof:VPN: Each named system/project has a real repository or official documentation.",
+        "existence_proof:account: Each named system/project has a real repository or official documentation.",
+        "existence_proof:stack: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Unraid: Each named system/project has a real repository or official documentation.",
+        "existence_proof:affecting: Each named system/project has a real repository or official documentation.",
+        "existence_proof:containers: Each named system/project has a real repository or official documentation.",
+        "existence_proof:same: Each named system/project has a real repository or official documentation.",
+        "behavior_proof: The central behavior/concept is documented or implemented in source material."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "postfinance/single",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "existence_proof",
+          "label": "existence proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_postfinance_single_1",
+              "provider": "octocode",
+              "repo": "postfinance/single",
+              "path": "README.md",
+              "startLine": 1,
+              "endLine": 1,
+              "matchText": "[![Go Report Card](https://goreportcard.com/badge/github.com/postfinance/single)](https://goreportcard.com/report/github.com/postfinance/single)",
+              "matchedSignal": "single",
+              "url": "https://github.com/postfinance/single/blob/main/README.md#L1",
+              "role": "existence_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof:Docker: Each named system/project has a real repository or official documentation.",
+        "existence_proof:container: Each named system/project has a real repository or official documentation.",
+        "existence_proof:network: Each named system/project has a real repository or official documentation.",
+        "existence_proof:egress: Each named system/project has a real repository or official documentation.",
+        "existence_proof:through: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Windscribe: Each named system/project has a real repository or official documentation.",
+        "existence_proof:VPN: Each named system/project has a real repository or official documentation.",
+        "existence_proof:account: Each named system/project has a real repository or official documentation.",
+        "existence_proof:stack: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Unraid: Each named system/project has a real repository or official documentation.",
+        "existence_proof:affecting: Each named system/project has a real repository or official documentation.",
+        "existence_proof:containers: Each named system/project has a real repository or official documentation.",
+        "existence_proof:same: Each named system/project has a real repository or official documentation.",
+        "behavior_proof: The central behavior/concept is documented or implemented in source material."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "thephpleague/container",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "existence_proof",
+          "label": "existence proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_thephpleague_container_1",
+              "provider": "octocode",
+              "repo": "thephpleague/container",
+              "path": "README.md",
+              "startLine": 1,
+              "endLine": 1,
+              "matchText": "# Container (Dependency Injection)",
+              "matchedSignal": "container",
+              "url": "https://github.com/thephpleague/container/blob/main/README.md#L1",
+              "role": "existence_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof:single: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Docker: Each named system/project has a real repository or official documentation.",
+        "existence_proof:network: Each named system/project has a real repository or official documentation.",
+        "existence_proof:egress: Each named system/project has a real repository or official documentation.",
+        "existence_proof:through: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Windscribe: Each named system/project has a real repository or official documentation.",
+        "existence_proof:VPN: Each named system/project has a real repository or official documentation.",
+        "existence_proof:account: Each named system/project has a real repository or official documentation.",
+        "existence_proof:stack: Each named system/project has a real repository or official documentation.",
+        "existence_proof:Unraid: Each named system/project has a real repository or official documentation.",
+        "existence_proof:affecting: Each named system/project has a real repository or official documentation.",
+        "existence_proof:containers: Each named system/project has a real repository or official documentation.",
+        "existence_proof:same: Each named system/project has a real repository or official documentation.",
+        "behavior_proof: The central behavior/concept is documented or implemented in source material."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "beagreatengineer/how-to-develop-perfect-crud",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_beagreatengineer_how-to-develop-perfect-crud_1",
+              "provider": "octocode",
+              "repo": "beagreatengineer/how-to-develop-perfect-crud",
+              "path": "EN.md",
+              "startLine": 90,
+              "endLine": 90,
+              "matchText": "* Have `docker` and `docker-compose` installed on your local machine",
+              "matchedSignal": "docker-compose",
+              "url": "https://github.com/beagreatengineer/how-to-develop-perfect-crud/blob/main/EN.md#L90",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "dzfweb/microsoft-microservices-book",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_dzfweb_microsoft-microservices-book_1",
+              "provider": "octocode",
+              "repo": "dzfweb/microsoft-microservices-book",
+              "path": "toc.md",
+              "startLine": 37,
+              "endLine": 37,
+              "matchText": "### [Defining your multi-container application with docker-compose.yml](multi-container-microservice-net-applications/multi-container-applications-docker-compose.md)",
+              "matchedSignal": "docker-compose",
+              "url": "https://github.com/dzfweb/microsoft-microservices-book/blob/main/toc.md#L37",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "tajawal/code-challenge",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_tajawal_code-challenge_1",
+              "provider": "octocode",
+              "repo": "tajawal/code-challenge",
+              "path": "DE.md",
+              "startLine": 15,
+              "endLine": 15,
+              "matchText": "- Route 53 weighted routing, healthcheck with Cloudwatch and SNS ( Email notification )",
+              "matchedSignal": "route",
+              "url": "https://github.com/tajawal/code-challenge/blob/main/DE.md#L15",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            },
+            {
+              "id": "ev_tajawal_code-challenge_2",
+              "provider": "octocode",
+              "repo": "tajawal/code-challenge",
+              "path": "SRE.md",
+              "startLine": 15,
+              "endLine": 15,
+              "matchText": "- Route 53 weighted routing, healthcheck with Cloudwatch and SNS ( Email notification )",
+              "matchedSignal": "route",
+              "url": "https://github.com/tajawal/code-challenge/blob/main/SRE.md#L15",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "hyunjun/bookmarks",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_hyunjun_bookmarks_1",
+              "provider": "octocode",
+              "repo": "hyunjun/bookmarks",
+              "path": "go.md",
+              "startLine": 319,
+              "endLine": 319,
+              "matchText": "* [Dynamic pipeline route in Go. Is it possible to create a pipeline… | by Yuda Prasetiya | Apr, 2022 | Medium](https://medium.com/@yudaph/dynamic-pipeline-route-in-go-c73a9df991c0)",
+              "matchedSignal": "route",
+              "url": "https://github.com/hyunjun/bookmarks/blob/main/go.md#L319",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "Alen-E/trader",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_Alen-E_trader_1",
+              "provider": "octocode",
+              "repo": "Alen-E/trader",
+              "path": "p8.md",
+              "startLine": 122,
+              "endLine": 122,
+              "matchText": "3. Ensure single docker-compose.yml exists in /infra.",
+              "matchedSignal": "docker-compose",
+              "url": "https://github.com/Alen-E/trader/blob/main/p8.md#L122",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "chicago-tool-library/circulate",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_chicago-tool-library_circulate_1",
+              "provider": "octocode",
+              "repo": "chicago-tool-library/circulate",
+              "path": "NIX.md",
+              "startLine": 10,
+              "endLine": 10,
+              "matchText": "- [Docker w/ Compose](https://github.com/docker/compose#where-to-get-docker-compose) via Docker Desktop or equivalent - this setup runs Rails directly but uses a container for the database.",
+              "matchedSignal": "docker-compose",
+              "url": "https://github.com/chicago-tool-library/circulate/blob/main/NIX.md#L10",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "comerc/yandex",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_comerc_yandex_1",
+              "provider": "octocode",
+              "repo": "comerc/yandex",
+              "path": "Q.md",
+              "startLine": 92,
+              "endLine": 92,
+              "matchText": "- Dockerfile для сборки образов, docker-compose для многоконтейнерных приложений",
+              "matchedSignal": "docker-compose",
+              "url": "https://github.com/comerc/yandex/blob/main/Q.md#L92",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "devdotxyz/eth-xyz",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_devdotxyz_eth-xyz_1",
+              "provider": "octocode",
+              "repo": "devdotxyz/eth-xyz",
+              "path": "DEV.md",
+              "startLine": 7,
+              "endLine": 7,
+              "matchText": "* `docker-compose up`",
+              "matchedSignal": "docker-compose",
+              "url": "https://github.com/devdotxyz/eth-xyz/blob/main/DEV.md#L7",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "donejs/place-my-order",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_donejs_place-my-order_1",
+              "provider": "octocode",
+              "repo": "donejs/place-my-order",
+              "path": "ci.md",
+              "startLine": 71,
+              "endLine": 71,
+              "matchText": "docker-compose -f docker-compose.test.yml build",
+              "matchedSignal": "docker-compose",
+              "url": "https://github.com/donejs/place-my-order/blob/main/ci.md#L71",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "dwyschka/localkit",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_dwyschka_localkit_1",
+              "provider": "octocode",
+              "repo": "dwyschka/localkit",
+              "path": "s3.md",
+              "startLine": 10,
+              "endLine": 10,
+              "matchText": "`docker-compose.yml` mitgelieferte Garage-S3-Dienst (`localkit-storage`).",
+              "matchedSignal": "docker-compose",
+              "url": "https://github.com/dwyschka/localkit/blob/main/s3.md#L10",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "GSA/ckanext-usmetadata",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_GSA_ckanext-usmetadata_1",
+              "provider": "octocode",
+              "repo": "GSA/ckanext-usmetadata",
+              "path": "ADR.md",
+              "startLine": 99,
+              "endLine": 99,
+              "matchText": "this extension does not need any additional linux packages, the docker-compose.yml would directly call",
+              "matchedSignal": "docker-compose",
+              "url": "https://github.com/GSA/ckanext-usmetadata/blob/main/ADR.md#L99",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "LangGraph-GUI/LangGraph-GUI",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_LangGraph-GUI_LangGraph-GUI_1",
+              "provider": "octocode",
+              "repo": "LangGraph-GUI/LangGraph-GUI",
+              "path": "llm.md",
+              "startLine": 182,
+              "endLine": 182,
+              "matchText": "- **CONDITION**: Evaluate and route to `true_next`/`false_next`",
+              "matchedSignal": "route",
+              "url": "https://github.com/LangGraph-GUI/LangGraph-GUI/blob/main/llm.md#L182",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "marcozennaro/IPv6-WSN-book",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_marcozennaro_IPv6-WSN-book_1",
+              "provider": "octocode",
+              "repo": "marcozennaro/IPv6-WSN-book",
+              "path": "1.asc",
+              "startLine": 102,
+              "endLine": 102,
+              "matchText": "* Room for more levels of hierarchy and for route aggregation.",
+              "matchedSignal": "route",
+              "url": "https://github.com/marcozennaro/IPv6-WSN-book/blob/main/1.asc#L102",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            },
+            {
+              "id": "ev_marcozennaro_IPv6-WSN-book_2",
+              "provider": "octocode",
+              "repo": "marcozennaro/IPv6-WSN-book",
+              "path": "4.asc",
+              "startLine": 409,
+              "endLine": 409,
+              "matchText": "ETX can be used as the routing metric. Routes with a lower metric are preferred. In a route that includes multiple hops, the metric is the sum of the ETX of the individual hops.",
+              "matchedSignal": "route",
+              "url": "https://github.com/marcozennaro/IPv6-WSN-book/blob/main/4.asc#L409",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "nikhilbadyal/bitwarden-backup",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_nikhilbadyal_bitwarden-backup_1",
+              "provider": "octocode",
+              "repo": "nikhilbadyal/bitwarden-backup",
+              "path": "API.md",
+              "startLine": 193,
+              "endLine": 193,
+              "matchText": "└── routes/                 # API route handlers",
+              "matchedSignal": "route",
+              "url": "https://github.com/nikhilbadyal/bitwarden-backup/blob/main/API.md#L193",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "pestphp/docs",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_pestphp_docs_1",
+              "provider": "octocode",
+              "repo": "pestphp/docs",
+              "path": "tia.md",
+              "startLine": 51,
+              "endLine": 51,
+              "matchText": "- **Anything else** — config files, route files, fixture data, files outside the recorded graph — falls through to a broader pattern. Editing `config/app.php` re-runs every test, because Pest cannot s",
+              "matchedSignal": "route",
+              "url": "https://github.com/pestphp/docs/blob/main/tia.md#L51",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "PipeWire/pipewire",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_PipeWire_pipewire_1",
+              "provider": "octocode",
+              "repo": "PipeWire/pipewire",
+              "path": "NEWS",
+              "startLine": 5537,
+              "endLine": 5537,
+              "matchText": "- Don't try to route audio to nodes with unavailable routes.",
+              "matchedSignal": "route",
+              "url": "https://github.com/PipeWire/pipewire/blob/main/NEWS#L5537",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "QuixiAI/Hexis",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_QuixiAI_Hexis_1",
+              "provider": "octocode",
+              "repo": "QuixiAI/Hexis",
+              "path": "PLAN.md",
+              "startLine": 242,
+              "endLine": 242,
+              "matchText": "1. **Route detections to a decision.** When `find_contradictions()` fires above a",
+              "matchedSignal": "route",
+              "url": "https://github.com/QuixiAI/Hexis/blob/main/PLAN.md#L242",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "SPARQL-Anything/sparql.anything",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_SPARQL-Anything_sparql.anything_1",
+              "provider": "octocode",
+              "repo": "SPARQL-Anything/sparql.anything",
+              "path": "S3.md",
+              "startLine": 25,
+              "endLine": 25,
+              "matchText": "| `s3.endpoint` | The URL of the S3-compatible endpoint (e.g. `https://s3.amazonaws.com`, or the URL of a MinIO instance). Setting this property is what tells SPARQL Anything to route the request thro",
+              "matchedSignal": "route",
+              "url": "https://github.com/SPARQL-Anything/sparql.anything/blob/main/S3.md#L25",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "tekumara/notes",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_tekumara_notes_1",
+              "provider": "octocode",
+              "repo": "tekumara/notes",
+              "path": "k3d.md",
+              "startLine": 177,
+              "endLine": 177,
+              "matchText": "The node filter describes which node containers to route to. The following are equivalent and target all node containers in the cluster:",
+              "matchedSignal": "route",
+              "url": "https://github.com/tekumara/notes/blob/main/k3d.md#L177",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "Timshel/OIDCWarden",
+      "score": 0.3,
+      "class": "unknown",
+      "positiveSignals": [
+        {
+          "key": "behavior_proof",
+          "label": "behavior proof captured from authoritative source material.",
+          "weight": 30,
+          "source": "file",
+          "confidence": 0.95,
+          "evidence": [
+            {
+              "id": "ev_Timshel_OIDCWarden_1",
+              "provider": "octocode",
+              "repo": "Timshel/OIDCWarden",
+              "path": "SSO.md",
+              "startLine": 141,
+              "endLine": 141,
+              "matchText": "If you want to run a testing instance of Keycloak the Playwright [docker-compose](playwright/docker-compose.yml) can be used.",
+              "matchedSignal": "docker-compose",
+              "url": "https://github.com/Timshel/OIDCWarden/blob/main/SSO.md#L141",
+              "role": "behavior_proof",
+              "proofLevel": "proved"
+            }
+          ]
+        }
+      ],
+      "negativeSignals": [],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    },
+    {
+      "repo": "aws/aws-graviton-getting-started",
+      "score": 0,
+      "class": "unknown",
+      "positiveSignals": [],
+      "negativeSignals": [
+        {
+          "key": "no_exact_evidence",
+          "label": "No exact file evidence was read for this repo.",
+          "weight": -30,
+          "source": "metadata",
+          "confidence": 0.8
+        }
+      ],
+      "missingProof": [
+        "existence_proof: Each named system/project has a real repository or official documentation.",
+        "behavior_proof: The central behavior/concept is documented or implemented in source material."
+      ],
+      "rejectionReasons": [],
+      "nextAction": "reject"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "ev_apple_container_1",
+      "provider": "octocode",
+      "repo": "apple/container",
+      "path": "README.md",
+      "startLine": 3,
+      "endLine": 3,
+      "matchText": "&nbsp;container",
+      "matchedSignal": "container",
+      "url": "https://github.com/apple/container/blob/main/README.md#L3",
+      "role": "existence_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_apple_container_2",
+      "provider": "octocode",
+      "repo": "apple/container",
+      "path": "README.md",
+      "startLine": 6,
+      "endLine": 6,
+      "matchText": "`container` is a tool that you can use to create and run Linux containers as lightweight virtual machines on your Mac. It's written in Swift, and optimized for Apple silicon.",
+      "matchedSignal": "containers",
+      "url": "https://github.com/apple/container/blob/main/README.md#L6",
+      "role": "existence_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_docker-library_docker_1",
+      "provider": "octocode",
+      "repo": "docker-library/docker",
+      "path": "README.md",
+      "startLine": 1,
+      "endLine": 1,
+      "matchText": "# https://github.com/docker-library/docker",
+      "matchedSignal": "Docker",
+      "url": "https://github.com/docker-library/docker/blob/main/README.md#L1",
+      "role": "existence_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_docker-library_docker_2",
+      "provider": "octocode",
+      "repo": "docker-library/docker",
+      "path": "versions.json",
+      "startLine": 5,
+      "endLine": 5,
+      "matchText": "\"dockerUrl\": \"https://download.docker.com/linux/static/stable/x86_64/docker-29.8.0.tgz\",",
+      "matchedSignal": "Docker",
+      "url": "https://github.com/docker-library/docker/blob/main/versions.json#L5",
+      "role": "existence_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_docker-library_docker_3",
+      "provider": "octocode",
+      "repo": "docker-library/docker",
+      "path": "versions.json",
+      "startLine": 115,
+      "endLine": 115,
+      "matchText": "\"file\": \"docker-compose-linux-x86_64\",",
+      "matchedSignal": "docker-compose",
+      "url": "https://github.com/docker-library/docker/blob/main/versions.json#L115",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_Dreamer-Paul_Single_1",
+      "provider": "octocode",
+      "repo": "Dreamer-Paul/Single",
+      "path": "README.md",
+      "startLine": 1,
+      "endLine": 1,
+      "matchText": "# Single",
+      "matchedSignal": "single",
+      "url": "https://github.com/Dreamer-Paul/Single/blob/main/README.md#L1",
+      "role": "existence_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_jenkinsci_docker_1",
+      "provider": "octocode",
+      "repo": "jenkinsci/docker",
+      "path": "CHANGELOG.md",
+      "startLine": 4,
+      "endLine": 4,
+      "matchText": "| See [GitHub releases](https://github.com/jenkinsci/docker/releases) |",
+      "matchedSignal": "Docker",
+      "url": "https://github.com/jenkinsci/docker/blob/main/CHANGELOG.md#L4",
+      "role": "existence_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_jenkinsci_docker_2",
+      "provider": "octocode",
+      "repo": "jenkinsci/docker",
+      "path": "CONTRIBUTING.md",
+      "startLine": 3,
+      "endLine": 3,
+      "matchText": "Please note that only issues related to this Docker image will be addressed here.",
+      "matchedSignal": "Docker",
+      "url": "https://github.com/jenkinsci/docker/blob/main/CONTRIBUTING.md#L3",
+      "role": "existence_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_jenkinsci_docker_3",
+      "provider": "octocode",
+      "repo": "jenkinsci/docker",
+      "path": "README.md",
+      "startLine": 1,
+      "endLine": 1,
+      "matchText": "# Official Jenkins Docker image",
+      "matchedSignal": "Docker",
+      "url": "https://github.com/jenkinsci/docker/blob/main/README.md#L1",
+      "role": "existence_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_jenkinsci_docker_4",
+      "provider": "octocode",
+      "repo": "jenkinsci/docker",
+      "path": "README.md",
+      "startLine": 332,
+      "endLine": 332,
+      "matchText": "To use Docker Compose with Jenkins, you can define a docker-compose.yml file including a Jenkins instance and any other services it depends on.",
+      "matchedSignal": "docker-compose",
+      "url": "https://github.com/jenkinsci/docker/blob/main/README.md#L332",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_jenkinsci_docker_5",
+      "provider": "octocode",
+      "repo": "jenkinsci/docker",
+      "path": "SECURITY.md",
+      "startLine": 6,
+      "endLine": 6,
+      "matchText": "You can find more information in the [general Security Policy](https://github.com/jenkinsci/.github/blob/master/SECURITY.md), this policy is specific to our Docker images.",
+      "matchedSignal": "Docker",
+      "url": "https://github.com/jenkinsci/docker/blob/main/SECURITY.md#L6",
+      "role": "existence_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_marcsauter_single_1",
+      "provider": "octocode",
+      "repo": "marcsauter/single",
+      "path": "README.md",
+      "startLine": 1,
+      "endLine": 1,
+      "matchText": "# single",
+      "matchedSignal": "single",
+      "url": "https://github.com/marcsauter/single/blob/main/README.md#L1",
+      "role": "existence_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_nextcloud_docker_1",
+      "provider": "octocode",
+      "repo": "nextcloud/docker",
+      "path": ".examples/README.md",
+      "startLine": 3,
+      "endLine": 3,
+      "matchText": "In this subfolders are some examples how to use the docker image. There are two sections:",
+      "matchedSignal": "Docker",
+      "url": "https://github.com/nextcloud/docker/blob/main/.examples/README.md#L3",
+      "role": "existence_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_nextcloud_docker_2",
+      "provider": "octocode",
+      "repo": "nextcloud/docker",
+      "path": ".examples/README.md",
+      "startLine": 6,
+      "endLine": 6,
+      "matchText": "* [`docker-compose`](https://github.com/nextcloud/docker/tree/master/.examples/docker-compose)",
+      "matchedSignal": "docker-compose",
+      "url": "https://github.com/nextcloud/docker/blob/main/.examples/README.md#L6",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_nextcloud_docker_3",
+      "provider": "octocode",
+      "repo": "nextcloud/docker",
+      "path": "README.md",
+      "startLine": 1,
+      "endLine": 1,
+      "matchText": "![GitHub last commit](https://img.shields.io/github/last-commit/nextcloud/docker)",
+      "matchedSignal": "Docker",
+      "url": "https://github.com/nextcloud/docker/blob/main/README.md#L1",
+      "role": "existence_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_nextcloud_docker_4",
+      "provider": "octocode",
+      "repo": "nextcloud/docker",
+      "path": "README.md",
+      "startLine": 45,
+      "endLine": 45,
+      "matchText": "- [Running this image with `docker compose`](#running-this-image-with-docker-compose)",
+      "matchedSignal": "docker-compose",
+      "url": "https://github.com/nextcloud/docker/blob/main/README.md#L45",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_php-fig_container_1",
+      "provider": "octocode",
+      "repo": "php-fig/container",
+      "path": "README.md",
+      "startLine": 1,
+      "endLine": 1,
+      "matchText": "Container interface",
+      "matchedSignal": "container",
+      "url": "https://github.com/php-fig/container/blob/main/README.md#L1",
+      "role": "existence_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_postfinance_single_1",
+      "provider": "octocode",
+      "repo": "postfinance/single",
+      "path": "README.md",
+      "startLine": 1,
+      "endLine": 1,
+      "matchText": "[![Go Report Card](https://goreportcard.com/badge/github.com/postfinance/single)](https://goreportcard.com/report/github.com/postfinance/single)",
+      "matchedSignal": "single",
+      "url": "https://github.com/postfinance/single/blob/main/README.md#L1",
+      "role": "existence_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_thephpleague_container_1",
+      "provider": "octocode",
+      "repo": "thephpleague/container",
+      "path": "README.md",
+      "startLine": 1,
+      "endLine": 1,
+      "matchText": "# Container (Dependency Injection)",
+      "matchedSignal": "container",
+      "url": "https://github.com/thephpleague/container/blob/main/README.md#L1",
+      "role": "existence_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_beagreatengineer_how-to-develop-perfect-crud_1",
+      "provider": "octocode",
+      "repo": "beagreatengineer/how-to-develop-perfect-crud",
+      "path": "EN.md",
+      "startLine": 90,
+      "endLine": 90,
+      "matchText": "* Have `docker` and `docker-compose` installed on your local machine",
+      "matchedSignal": "docker-compose",
+      "url": "https://github.com/beagreatengineer/how-to-develop-perfect-crud/blob/main/EN.md#L90",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_dzfweb_microsoft-microservices-book_1",
+      "provider": "octocode",
+      "repo": "dzfweb/microsoft-microservices-book",
+      "path": "toc.md",
+      "startLine": 37,
+      "endLine": 37,
+      "matchText": "### [Defining your multi-container application with docker-compose.yml](multi-container-microservice-net-applications/multi-container-applications-docker-compose.md)",
+      "matchedSignal": "docker-compose",
+      "url": "https://github.com/dzfweb/microsoft-microservices-book/blob/main/toc.md#L37",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_tajawal_code-challenge_1",
+      "provider": "octocode",
+      "repo": "tajawal/code-challenge",
+      "path": "DE.md",
+      "startLine": 15,
+      "endLine": 15,
+      "matchText": "- Route 53 weighted routing, healthcheck with Cloudwatch and SNS ( Email notification )",
+      "matchedSignal": "route",
+      "url": "https://github.com/tajawal/code-challenge/blob/main/DE.md#L15",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_tajawal_code-challenge_2",
+      "provider": "octocode",
+      "repo": "tajawal/code-challenge",
+      "path": "SRE.md",
+      "startLine": 15,
+      "endLine": 15,
+      "matchText": "- Route 53 weighted routing, healthcheck with Cloudwatch and SNS ( Email notification )",
+      "matchedSignal": "route",
+      "url": "https://github.com/tajawal/code-challenge/blob/main/SRE.md#L15",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_hyunjun_bookmarks_1",
+      "provider": "octocode",
+      "repo": "hyunjun/bookmarks",
+      "path": "go.md",
+      "startLine": 319,
+      "endLine": 319,
+      "matchText": "* [Dynamic pipeline route in Go. Is it possible to create a pipeline… | by Yuda Prasetiya | Apr, 2022 | Medium](https://medium.com/@yudaph/dynamic-pipeline-route-in-go-c73a9df991c0)",
+      "matchedSignal": "route",
+      "url": "https://github.com/hyunjun/bookmarks/blob/main/go.md#L319",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_Alen-E_trader_1",
+      "provider": "octocode",
+      "repo": "Alen-E/trader",
+      "path": "p8.md",
+      "startLine": 122,
+      "endLine": 122,
+      "matchText": "3. Ensure single docker-compose.yml exists in /infra.",
+      "matchedSignal": "docker-compose",
+      "url": "https://github.com/Alen-E/trader/blob/main/p8.md#L122",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_chicago-tool-library_circulate_1",
+      "provider": "octocode",
+      "repo": "chicago-tool-library/circulate",
+      "path": "NIX.md",
+      "startLine": 10,
+      "endLine": 10,
+      "matchText": "- [Docker w/ Compose](https://github.com/docker/compose#where-to-get-docker-compose) via Docker Desktop or equivalent - this setup runs Rails directly but uses a container for the database.",
+      "matchedSignal": "docker-compose",
+      "url": "https://github.com/chicago-tool-library/circulate/blob/main/NIX.md#L10",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_comerc_yandex_1",
+      "provider": "octocode",
+      "repo": "comerc/yandex",
+      "path": "Q.md",
+      "startLine": 92,
+      "endLine": 92,
+      "matchText": "- Dockerfile для сборки образов, docker-compose для многоконтейнерных приложений",
+      "matchedSignal": "docker-compose",
+      "url": "https://github.com/comerc/yandex/blob/main/Q.md#L92",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_devdotxyz_eth-xyz_1",
+      "provider": "octocode",
+      "repo": "devdotxyz/eth-xyz",
+      "path": "DEV.md",
+      "startLine": 7,
+      "endLine": 7,
+      "matchText": "* `docker-compose up`",
+      "matchedSignal": "docker-compose",
+      "url": "https://github.com/devdotxyz/eth-xyz/blob/main/DEV.md#L7",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_donejs_place-my-order_1",
+      "provider": "octocode",
+      "repo": "donejs/place-my-order",
+      "path": "ci.md",
+      "startLine": 71,
+      "endLine": 71,
+      "matchText": "docker-compose -f docker-compose.test.yml build",
+      "matchedSignal": "docker-compose",
+      "url": "https://github.com/donejs/place-my-order/blob/main/ci.md#L71",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_dwyschka_localkit_1",
+      "provider": "octocode",
+      "repo": "dwyschka/localkit",
+      "path": "s3.md",
+      "startLine": 10,
+      "endLine": 10,
+      "matchText": "`docker-compose.yml` mitgelieferte Garage-S3-Dienst (`localkit-storage`).",
+      "matchedSignal": "docker-compose",
+      "url": "https://github.com/dwyschka/localkit/blob/main/s3.md#L10",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_GSA_ckanext-usmetadata_1",
+      "provider": "octocode",
+      "repo": "GSA/ckanext-usmetadata",
+      "path": "ADR.md",
+      "startLine": 99,
+      "endLine": 99,
+      "matchText": "this extension does not need any additional linux packages, the docker-compose.yml would directly call",
+      "matchedSignal": "docker-compose",
+      "url": "https://github.com/GSA/ckanext-usmetadata/blob/main/ADR.md#L99",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_LangGraph-GUI_LangGraph-GUI_1",
+      "provider": "octocode",
+      "repo": "LangGraph-GUI/LangGraph-GUI",
+      "path": "llm.md",
+      "startLine": 182,
+      "endLine": 182,
+      "matchText": "- **CONDITION**: Evaluate and route to `true_next`/`false_next`",
+      "matchedSignal": "route",
+      "url": "https://github.com/LangGraph-GUI/LangGraph-GUI/blob/main/llm.md#L182",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_marcozennaro_IPv6-WSN-book_1",
+      "provider": "octocode",
+      "repo": "marcozennaro/IPv6-WSN-book",
+      "path": "1.asc",
+      "startLine": 102,
+      "endLine": 102,
+      "matchText": "* Room for more levels of hierarchy and for route aggregation.",
+      "matchedSignal": "route",
+      "url": "https://github.com/marcozennaro/IPv6-WSN-book/blob/main/1.asc#L102",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_marcozennaro_IPv6-WSN-book_2",
+      "provider": "octocode",
+      "repo": "marcozennaro/IPv6-WSN-book",
+      "path": "4.asc",
+      "startLine": 409,
+      "endLine": 409,
+      "matchText": "ETX can be used as the routing metric. Routes with a lower metric are preferred. In a route that includes multiple hops, the metric is the sum of the ETX of the individual hops.",
+      "matchedSignal": "route",
+      "url": "https://github.com/marcozennaro/IPv6-WSN-book/blob/main/4.asc#L409",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_nikhilbadyal_bitwarden-backup_1",
+      "provider": "octocode",
+      "repo": "nikhilbadyal/bitwarden-backup",
+      "path": "API.md",
+      "startLine": 193,
+      "endLine": 193,
+      "matchText": "└── routes/                 # API route handlers",
+      "matchedSignal": "route",
+      "url": "https://github.com/nikhilbadyal/bitwarden-backup/blob/main/API.md#L193",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_pestphp_docs_1",
+      "provider": "octocode",
+      "repo": "pestphp/docs",
+      "path": "tia.md",
+      "startLine": 51,
+      "endLine": 51,
+      "matchText": "- **Anything else** — config files, route files, fixture data, files outside the recorded graph — falls through to a broader pattern. Editing `config/app.php` re-runs every test, because Pest cannot s",
+      "matchedSignal": "route",
+      "url": "https://github.com/pestphp/docs/blob/main/tia.md#L51",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_PipeWire_pipewire_1",
+      "provider": "octocode",
+      "repo": "PipeWire/pipewire",
+      "path": "NEWS",
+      "startLine": 5537,
+      "endLine": 5537,
+      "matchText": "- Don't try to route audio to nodes with unavailable routes.",
+      "matchedSignal": "route",
+      "url": "https://github.com/PipeWire/pipewire/blob/main/NEWS#L5537",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_QuixiAI_Hexis_1",
+      "provider": "octocode",
+      "repo": "QuixiAI/Hexis",
+      "path": "PLAN.md",
+      "startLine": 242,
+      "endLine": 242,
+      "matchText": "1. **Route detections to a decision.** When `find_contradictions()` fires above a",
+      "matchedSignal": "route",
+      "url": "https://github.com/QuixiAI/Hexis/blob/main/PLAN.md#L242",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_SPARQL-Anything_sparql.anything_1",
+      "provider": "octocode",
+      "repo": "SPARQL-Anything/sparql.anything",
+      "path": "S3.md",
+      "startLine": 25,
+      "endLine": 25,
+      "matchText": "| `s3.endpoint` | The URL of the S3-compatible endpoint (e.g. `https://s3.amazonaws.com`, or the URL of a MinIO instance). Setting this property is what tells SPARQL Anything to route the request thro",
+      "matchedSignal": "route",
+      "url": "https://github.com/SPARQL-Anything/sparql.anything/blob/main/S3.md#L25",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_tekumara_notes_1",
+      "provider": "octocode",
+      "repo": "tekumara/notes",
+      "path": "k3d.md",
+      "startLine": 177,
+      "endLine": 177,
+      "matchText": "The node filter describes which node containers to route to. The following are equivalent and target all node containers in the cluster:",
+      "matchedSignal": "route",
+      "url": "https://github.com/tekumara/notes/blob/main/k3d.md#L177",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    },
+    {
+      "id": "ev_Timshel_OIDCWarden_1",
+      "provider": "octocode",
+      "repo": "Timshel/OIDCWarden",
+      "path": "SSO.md",
+      "startLine": 141,
+      "endLine": 141,
+      "matchText": "If you want to run a testing instance of Keycloak the Playwright [docker-compose](playwright/docker-compose.yml) can be used.",
+      "matchedSignal": "docker-compose",
+      "url": "https://github.com/Timshel/OIDCWarden/blob/main/SSO.md#L141",
+      "role": "behavior_proof",
+      "proofLevel": "proved"
+    }
+  ],
+  "warnings": [
+    "Repo discovery returned 9 repo(s) across 3 repo_search probe(s)."
+  ]
+}

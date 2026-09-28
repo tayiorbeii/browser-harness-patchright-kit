@@ -14,6 +14,11 @@ services:
     # OPTIONAL: add `platform: linux/amd64` in a local override only when a project needs an amd64 Chrome-channel image.
     init: true
 
+    # The launcher supervises Chrome and exits non-zero once it cannot recover, so
+    # the container has to come back on its own. Without this, a dead browser left
+    # the container "running" with a dead CDP port until a human noticed.
+    restart: unless-stopped
+
     # Docker Desktop-friendly default. On native Linux, a local override may use
     # `ipc: host` instead for Chromium shared-memory behavior; keep this compose
     # file conservative and portable by default.

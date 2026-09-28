@@ -1,0 +1,30 @@
+--- a/main.py
++++ b/main.py
+@@
+ from app.xc import router as xc_router
+ from app.dlhd_proxy import router as dlhd_proxy_router
++from app.admin_sofascore import router as admin_sofascore_router
+@@ def _wire_router_injectors():
+     import app.xc as xc_mod
+     import app.vod as vod_mod
+     import app.proxy as proxy_mod
++    import app.admin_sofascore as admin_sofascore_mod
+ 
+     for name, fn_name, arg in [
+         (xc_mod, "set_catalog", catalog),
+         (xc_mod, "set_settings", settings),
+         (xc_mod, "set_store", store),
+         (xc_mod, "set_event_publications", event_publications),
+         (xc_mod, "set_event_playback", event_playback),
++        (admin_sofascore_mod, "set_event_publications", event_publications),
+         (vod_mod, "set_refs", engine),
+         (proxy_mod, "set_http_client", http_client),
+         (proxy_mod, "set_published_base_url", settings.effective_published_base_url),
+     ]:
+@@
+ # Mount routers
+ app.include_router(xc_router, tags=["xc"])
+ app.include_router(vod_router, prefix="/vod", tags=["vod"])
+ app.include_router(proxy_router, prefix="/proxy", tags=["proxy"])
+ app.include_router(dlhd_proxy_router, tags=["dlhd-proxy"])
++app.include_router(admin_sofascore_router, tags=["admin-sofascore"])

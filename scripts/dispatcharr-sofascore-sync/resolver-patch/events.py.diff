@@ -1,0 +1,20 @@
+--- a/events.py
++++ b/events.py
+@@
+ from app.registry import EntityKey, StreamIdRegistry
++from app.sofascore_overlay import overlay as _sofascore_overlay
+@@ class EventPublicationService:
+@@ def list_publications(
+             hard_expiry_at = self._policy.hard_expiry_at(event)
+             state = EventState.STALE if stale else self._policy.state(event, current)
++            if state not in (EventState.STALE, EventState.CANCELLED, EventState.ENDED):
++                # SofaScore-confirmed completion overrides the scheduled-
++                # duration/grace math immediately, instead of waiting out
++                # RIVE_EVENT_DEFAULT_DURATION_MINUTES + RIVE_EVENT_GRACE_MINUTES.
++                # Never let a bug here affect normal catalog visibility.
++                try:
++                    if _sofascore_overlay.is_confirmed_ended(event.origin, event.event_id):
++                        state = EventState.ENDED
++                except Exception:
++                    pass
+             ended_at = row["ended_at"]

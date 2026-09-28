@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [[ "${1:-}" == "--dry-run" ]]; then
+  printf '%s\n' "CBS NFL picks automation: ${ROOT}/scripts/bh run"
+  exit 0
+fi
+
+cd "$ROOT"
+exec "$ROOT/scripts/bh" run <<'PY'
+import json
+
+LOBBY = "https://picks.cbssports.com/football/lobby"
+
+# Reuse the existing isolated picks tab when possible; never close user tabs.
+tabs = list_tabs()
+picks_tab = next((tab for tab in tabs if "picks.cbssports.com" in tab.get("url", "")), None)
+if picks_tab:
+    switch_tab(picks_tab["targetId"])
+else:
+    reuse_tab(LOBBY, close_others=False)
+wait_for_load()
+
+# Resolve the pool URL from the lobby each run so week/entry identifiers stay fresh.
+current_url = page_info()["url"]
+if "picks.cbssports.com/football/pickem/pools/" in current_url:
+    pool_url = current_url
+else:
+    goto_url(LOBBY)
+    wait_for_load()
+    pool_url = js("document.querySelector('a[data-cy=\\\"Nevadaho\\\"]')?.href")
+    if not pool_url:
+        raise SystemExit("Nevadaho pool link was not found on the CBS Pick'em lobby")
+    goto_url(pool_url)
+    wait_for_load()
+
+if "Sign in" in js("document.body.innerText") or "Log in" in js("document.body.innerText"):
+    raise SystemExit("CBS login is required")
+
+
+def center_of(selector):
+    raw = js(f"(() => {{ const e = document.querySelector('{selector}'); if (!e) return null; const r = e.getBoundingClientRect(); return JSON.stringify({{x:r.x,y:r.y,w:r.width,h:r.height}}); }})()")
+    if not raw:
+        raise SystemExit(f"Element not found: {selector}")
+    rect = json.loads(raw)
+    return rect["x"] + rect["w"] / 2, rect["y"] + rect["h"] / 2
+
+# Autofill all currently available games using CBS consensus favorites.
+x, y = center_of('[data-testid=autofill-btn]')
+click_at_xy(x, y)
+wait(0.4)
+
+raw = js("""(() => {
+  const title = [...document.querySelectorAll('[data-testid=autofill-titles]')]
+    .find(e => e.innerText.trim() === 'Favorites');
+  if (!title) return null;
+  const r = title.parentElement.parentElement.querySelector('input[type=radio]').parentElement.getBoundingClientRect();
+  return JSON.stringify({x:r.x,y:r.y,w:r.width,h:r.height});
+})()""")
+if not raw:
+    raise SystemExit("CBS Autofill Favorites option was not found")
+rect = json.loads(raw)
+click_at_xy(rect["x"] + rect["w"] / 2, rect["y"] + rect["h"] / 2)
+wait(0.3)
+x, y = center_of('[data-testid=save-autofill-btn]')
+click_at_xy(x, y)
+wait(0.8)
+
+count = js("document.body.innerText.match(/\\d+\\/\\d+ Picks/)?.[0]")
+if count != "16/16 Picks":
+    raise SystemExit(f"CBS picks were not complete after autofill: {count or 'count unavailable'}")
+
+x, y = center_of('[data-testid=save-picks-btn]')
+# Save is disabled when there are no unsaved changes. Otherwise submit the picks.
+if not js("document.querySelector('[data-testid=save-picks-btn]')?.disabled"):
+    click_at_xy(x, y)
+    wait(0.8)
+
+for _ in range(20):
+    if js("document.querySelector('[data-testid=save-picks-btn]')?.disabled"):
+        break
+    wait(0.25)
+else:
+    raise SystemExit("CBS Save button remained enabled; picks may not have been submitted")
+print(f"CBS NFL picks saved: {count}")
+PY

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.taylor.browser-harness-close-blank-tabs</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/taylor/Documents/Projects/00-in-progress/browser_harness_patchright_project_kit/scripts/close-blank-tabs.py</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/taylor/Documents/Projects/00-in-progress/browser_harness_patchright_project_kit</string>
+  <key>StartInterval</key>
+  <integer>900</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/com.taylor.browser-harness-close-blank-tabs.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/com.taylor.browser-harness-close-blank-tabs.err</string>
+</dict>
+</plist>
