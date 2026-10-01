@@ -9,7 +9,7 @@
 
 services:
   browser-harness-patchright:
-    image: ${BH_IMAGE:-browser-harness-patchright:1.61.1-vnc-clipboard}
+    image: ${BH_IMAGE:-browser-harness-patchright:1.62.3-vnc-font-fallbacks}
     container_name: ${BH_CONTAINER_NAME:-bh-my-app}
     # OPTIONAL: add `platform: linux/amd64` in a local override only when a project needs an amd64 Chrome-channel image.
     init: true

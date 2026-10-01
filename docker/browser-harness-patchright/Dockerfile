@@ -11,11 +11,33 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     chromium \
     curl \
+    fontconfig \
+    fonts-comic-neue \
+    fonts-crosextra-caladea \
+    fonts-crosextra-carlito \
+    fonts-dejavu-core \
+    fonts-ebgaramond \
+    fonts-firacode \
+    fonts-freefont-ttf \
+    fonts-inter \
     fonts-liberation \
+    fonts-linuxlibertine \
+    fonts-noto-cjk \
+    fonts-noto-color-emoji \
+    fonts-noto-core \
+    fonts-roboto \
+    fonts-symbola \
+    fonts-texgyre \
+    fonts-urw-base35 \
     tigervnc-standalone-server \
     tigervnc-tools \
     xvfb \
     && rm -rf /var/lib/apt/lists/*
+
+COPY web-font-fallbacks.conf /etc/fonts/conf.avail/60-browser-harness-web-fallbacks.conf
+RUN ln -s /etc/fonts/conf.avail/60-browser-harness-web-fallbacks.conf \
+        /etc/fonts/conf.d/60-browser-harness-web-fallbacks.conf \
+    && fc-cache -f
 
 RUN python -m pip install --no-cache-dir "patchright==${PATCHRIGHT_VERSION}"
 
